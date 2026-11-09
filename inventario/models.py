@@ -4,7 +4,7 @@ from django.db import models
 class Proveedor(models.Model):
     razon_social = models.CharField(max_length=100)
     nombre = models.CharField(max_length=100)
-    rut = models.CharField(max_length=12)
+    rut = models.CharField(max_length=12, unique=True)
     domicilio_legal = models.CharField(max_length=150)
     telefono = models.CharField(max_length=15)
     correo = models.CharField(max_length=80)
@@ -20,7 +20,7 @@ class Proveedor(models.Model):
 
 
 class Usuario(models.Model):
-    rut = models.CharField(max_length=12)
+    rut = models.CharField(max_length=12, unique=True)
     nombre_completo = models.CharField(max_length=100)
     puesto = models.CharField(max_length=50)
     departamento = models.CharField(max_length=50)
@@ -44,7 +44,7 @@ class Bodega(models.Model):
 
 
 class Producto(models.Model):
-    codigo = models.CharField(max_length=20)
+    codigo = models.CharField(max_length=20, unique=True)
     nombre = models.CharField(max_length=100)
     categoria = models.CharField(max_length=50)
     unidad_medida = models.CharField(max_length=20)
