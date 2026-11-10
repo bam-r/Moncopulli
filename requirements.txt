@@ -1,3 +1,4 @@
 django 6.1.3
 djangorestframework 3.14.0
-psycopg2
+psycopg2 #necesario para postgresql
+django-cors-headers #necesario para la comunicación entre vite y django

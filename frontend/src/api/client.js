@@ -1,6 +1,8 @@
-export const USE_MOCK = import.meta.env.VITE_USE_MOCK !== 'false'
-const BASE = '/api'
+export const USE_MOCK = false
+const BASE = import.meta.env.VITE_API_URL || '/api'
 const TOKEN_KEY = 'moncopulli.token'
+
+try { localStorage.removeItem('moncopulli.mock.v2') } catch {}
 
 export class NetworkError extends Error {
   constructor() { super('Sin conexión con el servidor') }
@@ -48,9 +50,5 @@ async function http(method, path, body) {
 }
 
 export async function request(method, path, body) {
-  if (USE_MOCK) {
-    const { mockRequest } = await import('./mock.js')
-    return mockRequest(method, path, body)
-  }
   return http(method, path, body)
 }

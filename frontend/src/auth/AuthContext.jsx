@@ -1,6 +1,7 @@
-import { createContext, useCallback, useContext, useMemo, useState } from 'react'
-import { iniciarSesion } from '../api/services'
+import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
+import { iniciarSesion, listar } from '../api/services'
 import { setToken } from '../api/client'
+import { cleanRut } from '../lib/rut'
 
 const KEY = 'moncopulli.sesion'
 const AuthCtx = createContext(null)
@@ -32,6 +33,25 @@ export function AuthProvider({ children }) {
       try { localStorage.setItem(KEY, JSON.stringify(nuevo)) } catch {}
       return nuevo
     })
+  }, [])
+
+  // Sincroniza la sesión guardada en localStorage con los usuarios reales del backend de Django
+  useEffect(() => {
+    if (!usuario) return
+    let cancelado = false
+    listar('usuarios')
+      .then((usuarios) => {
+        if (cancelado) return
+        const real = usuarios.find((x) => cleanRut(x.rut) === cleanRut(usuario.rut ?? '') || x.id === usuario.id)
+        if (!real || !String(real.estado).toLowerCase().startsWith('activ')) {
+          logout()
+        } else if (JSON.stringify(real) !== JSON.stringify(usuario)) {
+          try { localStorage.setItem(KEY, JSON.stringify(real)) } catch {}
+          setUsuario(real)
+        }
+      })
+      .catch(() => {})
+    return () => { cancelado = true }
   }, [])
 
   const value = useMemo(() => ({ usuario, login, logout, actualizarUsuario }), [usuario, login, logout, actualizarUsuario])

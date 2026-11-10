@@ -106,6 +106,7 @@ export function CompraModal({ productos, proveedores: todosProv, bodegas: todas,
     e.preventDefault()
     const nuevo = {}
     if (!c.proveedor) nuevo.proveedor = 'Elige un proveedor.'
+    if (!c.bodega) nuevo.bodega = 'Elige una bodega.'
     if (!c.numero_folio.trim()) nuevo.numero_folio = 'Ingresa el N° de folio.'
     if (!c.fecha_emision) nuevo.fecha_emision = 'Ingresa la fecha.'
     if (lineas.some((l) => !l.producto || !(Number(l.cantidad) > 0) || !(Number(l.precio_unitario) >= 0) || l.precio_unitario === '')) nuevo.lineas = 'Completa insumo, cantidad y precio en cada línea.'
@@ -133,7 +134,7 @@ export function CompraModal({ productos, proveedores: todosProv, bodegas: todas,
               </Select>
             )}
           </Field>
-          <Field label="Bodega">
+          <Field label="Bodega" error={err.bodega}>
             {(id) => (
               <Select id={id} value={c.bodega} onChange={(e) => setC({ ...c, bodega: e.target.value })}>
                 {bodegas.map((b) => <option key={b.id} value={b.id}>{b.nombre}</option>)}
