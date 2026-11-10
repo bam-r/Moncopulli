@@ -1,5 +1,22 @@
 from django.db import models
+from django.utils import timezone
 
+class Usuario(models.Model):
+    rut = models.CharField(max_length=12, unique=True)
+    nombre_completo = models.CharField(max_length=100)
+    puesto = models.CharField(max_length=50)
+    departamento = models.CharField(max_length=50)
+    telefono = models.CharField(max_length=15)
+    email = models.CharField(max_length=80)
+    contrasena = models.CharField(max_length=255)
+    rol = models.CharField(max_length=20)
+    estado = models.CharField(max_length=10, default='activo')
+    
+    intentos_fallidos = models.IntegerField(default=0)
+    bloqueado_hasta = models.DateTimeField(null=True, blank=True)
+
+    def __str__(self):
+        return f"{self.nombre_completo} ({self.rut})"
 
 class Proveedor(models.Model):
     razon_social = models.CharField(max_length=100)

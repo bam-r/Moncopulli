@@ -1,6 +1,8 @@
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from .views import (
+    LoginView,
+    LoginTemplateView,
     ProveedorViewSet,
     UsuarioViewSet,
     BodegaViewSet,
@@ -26,5 +28,7 @@ router.register(r'inventarios', InventarioViewSet)
 router.register(r'detalle-inventarios', DetalleInventarioViewSet)
 
 urlpatterns = [
+    path('login/', LoginView.as_view(), name='login_api'),
+    path('login-template/', LoginTemplateView.as_view(), name='login_template'),
     path('', include(router.urls)),
 ]

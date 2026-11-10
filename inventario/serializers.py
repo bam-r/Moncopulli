@@ -1,6 +1,11 @@
 from rest_framework import serializers
 from .models import Consumo, DetalleInventario, Inventario, ProduccionLeche, Proveedor, Bodega, Producto, DocumentoCompra, DetalleDocumento, Usuario
 
+
+class LoginSerializer(serializers.Serializer):
+    rut = serializers.CharField(max_length=12)
+    contrasena = serializers.CharField(write_only=True)
+
 class ProveedorSerializer(serializers.ModelSerializer):
     class Meta:
         model = Proveedor
