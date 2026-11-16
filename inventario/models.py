@@ -56,6 +56,26 @@ class Producto(models.Model):
         return f"{self.codigo} - {self.nombre}"
 
 
+class StockBodega(models.Model):
+    """Cuánto hay de cada producto en cada bodega.
+
+    Producto.stock_actual sigue siendo el total: siempre es la suma de las
+    filas de StockBodega de ese producto (se recalcula en servicios.py).
+    """
+
+    bodega = models.ForeignKey(Bodega, on_delete=models.PROTECT, related_name="stocks")
+    producto = models.ForeignKey(Producto, on_delete=models.PROTECT, related_name="stocks")
+    cantidad = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["bodega", "producto"], name="stock_unico_por_bodega_y_producto"),
+        ]
+
+    def __str__(self):
+        return f"{self.producto.nombre} en {self.bodega.nombre}: {self.cantidad}"
+
+
 class ProduccionLeche(models.Model):
     fecha = models.DateField()
     litros = models.DecimalField(max_digits=10, decimal_places=2)
@@ -81,7 +101,9 @@ class DocumentoCompra(models.Model):
 class DetalleDocumento(models.Model):
     cantidad = models.DecimalField(max_digits=10, decimal_places=2)
     precio_unitario = models.IntegerField()
-    documento = models.ForeignKey(DocumentoCompra, on_delete=models.CASCADE)
+    documento = models.ForeignKey(
+        DocumentoCompra, on_delete=models.CASCADE, related_name="detalles"
+    )
     producto = models.ForeignKey(Producto, on_delete=models.PROTECT)
 
     def __str__(self):
@@ -136,7 +158,9 @@ class DetalleInventario(models.Model):
     stock_sistema = models.DecimalField(max_digits=10, decimal_places=2)
     stock_real = models.DecimalField(max_digits=10, decimal_places=2)
     desviacion = models.DecimalField(max_digits=10, decimal_places=2)
-    inventario = models.ForeignKey(Inventario, on_delete=models.CASCADE)
+    inventario = models.ForeignKey(
+        Inventario, on_delete=models.CASCADE, related_name="detalles"
+    )
     producto = models.ForeignKey(Producto, on_delete=models.PROTECT)
 
     def __str__(self):

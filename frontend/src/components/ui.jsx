@@ -31,7 +31,7 @@ export function StatCard({ icon: Icon, tone = 'primary', label, value, note, tit
           <div className="stat__note">{note}</div>
         ) : (
           <div className="stat__line">
-            <span className="stat__value">{value}</span>
+            <span className={`stat__value ${typeof value === 'string' && value.length > 12 ? 'stat__value--text' : ''}`}>{value}</span>
             <span className="stat__note">{note}</span>
           </div>
         )}

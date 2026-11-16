@@ -45,3 +45,13 @@ export function useOnline() {
   }, [])
   return online
 }
+
+// Reloj en vivo (se actualiza cada segundo). Sirve para mostrar la fecha y hora del registro.
+export function useAhora(ms = 1000) {
+  const [ahora, setAhora] = useState(() => new Date())
+  useEffect(() => {
+    const t = setInterval(() => setAhora(new Date()), ms)
+    return () => clearInterval(t)
+  }, [ms])
+  return ahora
+}

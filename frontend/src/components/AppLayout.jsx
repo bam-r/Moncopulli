@@ -1,9 +1,6 @@
 import { useEffect, useState } from 'react'
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
-import {
-  Bell, ChartNoAxesColumn, ChevronDown, CircleHelp, LayoutGrid, LogOut, MapPin, Menu, Package,
-  Settings, Sprout, Truck, Users, WifiOff,
-} from 'lucide-react'
+import { Bell, ChevronDown, Ellipsis, LogOut, MapPin, Sprout, WifiOff, X } from 'lucide-react'
 import { useAuth } from '../auth/AuthContext'
 import { dmy, esAdmin, iniciales } from '../lib/format'
 import { sincronizarPendientes } from '../api/services'
@@ -11,23 +8,7 @@ import { useNotificaciones } from '../api/notifications'
 import { useOnline, usePendientes } from '../api/hooks'
 import { useToast } from './Toast'
 import { Avatar } from './ui'
-
-const GESTION = [
-  { to: '/resumen', label: 'Resumen', icon: LayoutGrid, admin: true },
-  { to: '/stock', label: 'Stock', icon: Package },
-  { to: '/usuarios', label: 'Usuarios', icon: Users, admin: true },
-  { to: '/inventario', label: 'Inventario', icon: Package, admin: true },
-  { to: '/reportes', label: 'Reportes', icon: ChartNoAxesColumn, admin: true },
-  { to: '/proveedores', label: 'Proveedores', icon: Truck, admin: true },
-]
-const PIE = [
-  { to: '/ayuda', label: 'Ayuda', icon: CircleHelp },
-  { to: '/configuracion', label: 'Configuración', icon: Settings },
-]
-const TITULOS = {
-  '/resumen': 'Resumen', '/stock': 'Stock', '/usuarios': 'Usuarios', '/inventario': 'Inventario',
-  '/reportes': 'Reportes', '/proveedores': 'Proveedores', '/ayuda': 'Ayuda', '/configuracion': 'Configuración',
-}
+import { BARRA_ADMIN, BARRA_TRABAJADOR, menuPara, piePara, titulos } from './nav'
 
 export function Brand({ size = 34 }) {
   return (
@@ -38,30 +19,83 @@ export function Brand({ size = 34 }) {
   )
 }
 
-function Sidebar({ admin, abierto, cerrar }) {
+function Sidebar({ admin }) {
   const item = (n) => (
-    <NavLink key={n.to} to={n.to} onClick={cerrar} className={({ isActive }) => `nav__item ${isActive ? 'nav__item--active' : ''}`}>
-      <n.icon size={20} strokeWidth={1.75} />
+    <NavLink key={n.to} to={n.to} className={({ isActive }) => `nav__item ${isActive ? 'nav__item--active' : ''} ${n.destacado ? 'nav__item--destacado' : ''}`}>
+      <n.icon size={22} strokeWidth={1.9} />
       {n.label}
     </NavLink>
   )
   return (
-    <>
-      {abierto && <div className="scrim" onClick={cerrar} />}
-      <aside className={`sidebar ${abierto ? 'sidebar--open' : ''}`} aria-label="Menú principal">
-        <div className="sidebar__brand"><Brand /></div>
-        <div className="sidebar__scroll">
-          <div className="overline">Gestión</div>
-          <nav className="nav">{GESTION.filter((n) => admin || !n.admin).map(item)}</nav>
-        </div>
-        <div className="sidebar__foot">
-          <nav className="nav">{PIE.filter((n) => admin || !n.admin).map(item)}</nav>
-          <div className="place">
-            <Avatar tone="primary"><MapPin size={14} strokeWidth={1.75} /></Avatar>
-            <div><b>Agricola Moncopulli</b><span>Los Lagos, Chile</span></div>
+    <aside className="sidebar" aria-label="Menú principal">
+      <div className="sidebar__brand"><Brand /></div>
+      <div className="sidebar__scroll">
+        {menuPara(admin).map((s) => (
+          <div key={s.titulo} className="nav__group">
+            <div className="overline">{s.titulo}</div>
+            <nav className="nav" aria-label={s.titulo}>{s.items.map(item)}</nav>
           </div>
+        ))}
+      </div>
+      <div className="sidebar__foot">
+        <nav className="nav" aria-label="Ayuda y ajustes">{piePara(admin).map(item)}</nav>
+        <div className="place">
+          <Avatar tone="primary"><MapPin size={14} strokeWidth={1.75} /></Avatar>
+          <div><b>Agricola Moncopulli</b><span>Los Lagos, Chile</span></div>
         </div>
-      </aside>
+      </div>
+    </aside>
+  )
+}
+
+// Barra de abajo en el celular: lo principal a un toque; el resto en "Más".
+function BarraInferior({ admin }) {
+  const { logout, usuario } = useAuth()
+  const navigate = useNavigate()
+  const { pathname } = useLocation()
+  const [mas, setMas] = useState(false)
+  useEffect(() => setMas(false), [pathname])
+  const principales = admin ? BARRA_ADMIN : BARRA_TRABAJADOR
+  const todos = [...menuPara(admin).flatMap((s) => s.items), ...piePara(admin)]
+  const enBarra = principales.map((to) => todos.find((n) => n.to === to)).filter(Boolean)
+  const enMas = menuPara(admin).map((s) => ({ ...s, items: s.items.filter((n) => !principales.includes(n.to)) })).filter((s) => s.items.length)
+  const masActivo = !principales.includes(pathname)
+  return (
+    <>
+      {mas && <div className="scrim" onClick={() => setMas(false)} />}
+      {mas && (
+        <section className="sheet" role="dialog" aria-modal="true" aria-label="Más opciones">
+          <header className="sheet__head">
+            <div><b>{usuario.nombre_completo}</b><span>{admin ? 'Administrador' : 'Trabajador'}</span></div>
+            <button type="button" className="icon-btn" onClick={() => setMas(false)} aria-label="Cerrar"><X size={22} /></button>
+          </header>
+          {[...enMas, { titulo: 'Cuenta', items: piePara(admin) }].map((s) => (
+            <div key={s.titulo} className="sheet__group">
+              <div className="overline">{s.titulo}</div>
+              <div className="sheet__grid">
+                {s.items.map((n) => (
+                  <NavLink key={n.to} to={n.to} className={({ isActive }) => `sheet__item ${isActive ? 'sheet__item--active' : ''}`}>
+                    <n.icon size={24} strokeWidth={1.9} /><span>{n.label}</span>
+                  </NavLink>
+                ))}
+              </div>
+            </div>
+          ))}
+          <button type="button" className="btn btn--secondary btn--block btn--lg" onClick={() => { logout(); navigate('/login') }}>
+            <LogOut size={20} /> Cerrar sesión
+          </button>
+        </section>
+      )}
+      <nav className="bottom-nav" aria-label="Menú principal">
+        {enBarra.map((n) => (
+          <NavLink key={n.to} to={n.to} className={({ isActive }) => `bottom-nav__item ${isActive ? 'bottom-nav__item--active' : ''} ${n.destacado ? 'bottom-nav__item--destacado' : ''}`}>
+            <n.icon size={26} strokeWidth={1.9} /><span>{n.corto}</span>
+          </NavLink>
+        ))}
+        <button type="button" className={`bottom-nav__item ${masActivo || mas ? 'bottom-nav__item--active' : ''}`} onClick={() => setMas((v) => !v)} aria-expanded={mas}>
+          <Ellipsis size={26} strokeWidth={1.9} /><span>Más</span>
+        </button>
+      </nav>
     </>
   )
 }
@@ -99,15 +133,13 @@ export default function AppLayout() {
   const { usuario } = useAuth()
   const admin = esAdmin(usuario)
   const { pathname } = useLocation()
-  const [menu, setMenu] = useState(false)
+  const navigate = useNavigate()
   const online = useOnline()
   const pendientes = usePendientes()
   const toast = useToast()
   const [notificacionesAbiertas, setNotificacionesAbiertas] = useState(false)
   const notificaciones = useNotificaciones(admin ? usuario : null)
-  const seccion = TITULOS[pathname] ?? ''
-
-  useEffect(() => setMenu(false), [pathname])
+  const seccion = titulos(admin)[pathname] ?? ''
 
   useEffect(() => {
     if (!online || !pendientes.length) return
@@ -116,10 +148,9 @@ export default function AppLayout() {
 
   return (
     <div className={`app ${admin ? '' : 'app--worker'}`}>
-      <Sidebar admin={admin} abierto={menu} cerrar={() => setMenu(false)} />
+      <Sidebar admin={admin} />
       <div className="app__main">
         <header className="topbar">
-          <button type="button" className="icon-btn topbar__menu" onClick={() => setMenu(true)} aria-label="Abrir menú"><Menu size={22} strokeWidth={1.75} /></button>
           <div className="topbar__brand"><Brand size={28} /></div>
           <nav className="crumbs" aria-label="Ruta">
             <span>Agricola Moncopulli</span><span className="crumbs__sep">›</span><b>{seccion}</b>
@@ -152,7 +183,7 @@ export default function AppLayout() {
                         {notificaciones.notificaciones.map((item) => (
                           <li key={item.id}>
                             <button type="button" className={`notifications__item ${item.leida ? '' : 'notifications__item--unread'}`}
-                              onClick={() => { notificaciones.marcarLeidas(); setNotificacionesAbiertas(false); navigate('/reportes') }}>
+                              onClick={() => { notificaciones.marcarLeidas(); setNotificacionesAbiertas(false); navigate('/historial') }}>
                               <span className="notifications__dot" aria-hidden="true" />
                               <span>
                                 <b>{item.nombre}</b> registró {item.cantidad} {item.unidad} de <b>{item.producto}</b>
@@ -181,6 +212,7 @@ export default function AppLayout() {
         )}
         <main className="content"><Outlet /></main>
       </div>
+      <BarraInferior admin={admin} />
     </div>
   )
 }

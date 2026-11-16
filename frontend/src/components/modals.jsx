@@ -1,10 +1,8 @@
 import { useState } from 'react'
-import { Plus, Trash2 } from 'lucide-react'
 import { Button, Field, Modal, Select } from './ui'
-import { actualizar, crear, registrarCompra, registrarSalida } from '../api/services'
+import { actualizar, crear } from '../api/services'
 import { useToast } from './Toast'
 import { formatRut, isValidRut } from '../lib/rut'
-import { num } from '../lib/format'
 
 const hoyISO = () => {
   const d = new Date()
@@ -38,156 +36,10 @@ function Pie({ onClose, enviando, etiqueta, formId, error }) {
   )
 }
 
-export function SalidaModal({ productos, bodegas: todas, usuario, onClose, onSaved }) {
+export function InsumoModal({ productos, bodegas = [], onClose, onSaved }) {
   const toast = useToast()
-  const bodegas = todas.filter((b) => b.estado !== false)
-  const disponibles = productos.filter((p) => Number(p.stock_actual) > 0)
-  const [f, setF] = useState({ producto: '', cantidad: '', bodega: bodegas[0]?.id ?? '' })
-  const [err, setErr] = useState({})
-  const { enviando, errorServidor, enviar } = useEnvio(onSaved, onClose)
-  const prod = productos.find((p) => String(p.id) === String(f.producto))
-
-  const submit = (e) => {
-    e.preventDefault()
-    const nuevo = {}
-    if (!f.producto) nuevo.producto = 'Elige un insumo.'
-    const cant = Number(f.cantidad)
-    if (!(cant > 0)) nuevo.cantidad = 'Ingresa una cantidad mayor a 0.'
-    else if (prod && cant > Number(prod.stock_actual)) nuevo.cantidad = `Solo hay ${num(prod.stock_actual)} ${prod.unidad_medida} disponibles.`
-    if (!f.bodega) nuevo.bodega = 'Elige una bodega.'
-    setErr(nuevo)
-    if (Object.keys(nuevo).length) return
-    enviar(async () => {
-      const r = await registrarSalida({ producto: Number(f.producto), bodega: Number(f.bodega), usuario: usuario.id, cantidad: cant })
-      toast(r.enCola ? 'Sin conexión: el retiro quedó guardado y se enviará solo.' : 'Salida registrada', r.enCola ? 'cola' : 'ok')
-      return r
-    })
-  }
-
-  return (
-    <Modal title="Registrar salida" onClose={onClose} footer={<Pie onClose={onClose} enviando={enviando} etiqueta="Registrar salida" formId="f-salida" error={errorServidor} />}>
-      <form id="f-salida" className="form" onSubmit={submit} noValidate>
-        <Field label="Insumo" error={err.producto}>
-          {(id) => (
-            <Select id={id} value={f.producto} onChange={(e) => setF({ ...f, producto: e.target.value })}>
-              <option value="">Selecciona un insumo</option>
-              {disponibles.map((p) => <option key={p.id} value={p.id}>{p.nombre} ({p.codigo})</option>)}
-            </Select>
-          )}
-        </Field>
-        <Field label={`Cantidad${prod ? ` (${prod.unidad_medida})` : ''}`} error={err.cantidad} hint={prod ? `Disponible: ${num(prod.stock_actual)} ${prod.unidad_medida}` : undefined}>
-          {(id) => <input id={id} className="input" type="number" inputMode="decimal" step="0.01" min="0" placeholder="0,00" value={f.cantidad} onChange={(e) => setF({ ...f, cantidad: e.target.value })} />}
-        </Field>
-        <Field label="Bodega" error={err.bodega}>
-          {(id) => (
-            <Select id={id} value={f.bodega} onChange={(e) => setF({ ...f, bodega: e.target.value })}>
-              {bodegas.map((b) => <option key={b.id} value={b.id}>{b.nombre}</option>)}
-            </Select>
-          )}
-        </Field>
-      </form>
-    </Modal>
-  )
-}
-
-export function CompraModal({ productos, proveedores: todosProv, bodegas: todas, usuario, onClose, onSaved }) {
-  const toast = useToast()
-  const bodegas = todas.filter((b) => b.estado !== false)
-  const proveedores = todosProv.filter((p) => p.estado !== false)
-  const [c, setC] = useState({ proveedor: '', bodega: bodegas[0]?.id ?? '', tipo_documento: 'Factura', numero_folio: '', fecha_emision: hoyISO() })
-  const [lineas, setLineas] = useState([{ producto: '', cantidad: '', precio_unitario: '' }])
-  const [err, setErr] = useState({})
-  const { enviando, errorServidor, enviar } = useEnvio(onSaved, onClose)
-
-  const setLinea = (i, k, v) => setLineas(lineas.map((l, j) => (j === i ? { ...l, [k]: v } : l)))
-  const total = lineas.reduce((s, l) => s + Number(l.cantidad || 0) * Number(l.precio_unitario || 0), 0)
-
-  const submit = (e) => {
-    e.preventDefault()
-    const nuevo = {}
-    if (!c.proveedor) nuevo.proveedor = 'Elige un proveedor.'
-    if (!c.bodega) nuevo.bodega = 'Elige una bodega.'
-    if (!c.numero_folio.trim()) nuevo.numero_folio = 'Ingresa el N° de folio.'
-    if (!c.fecha_emision) nuevo.fecha_emision = 'Ingresa la fecha.'
-    if (lineas.some((l) => !l.producto || !(Number(l.cantidad) > 0) || !(Number(l.precio_unitario) >= 0) || l.precio_unitario === '')) nuevo.lineas = 'Completa insumo, cantidad y precio en cada línea.'
-    setErr(nuevo)
-    if (Object.keys(nuevo).length) return
-    enviar(async () => {
-      const r = await registrarCompra({
-        cabecera: { ...c, numero_folio: c.numero_folio.trim(), proveedor: Number(c.proveedor), bodega: Number(c.bodega), usuario: usuario.id },
-        lineas,
-      })
-      toast('Compra agregada')
-      return r
-    })
-  }
-
-  return (
-    <Modal title="Agregar compra" onClose={onClose} footer={<Pie onClose={onClose} enviando={enviando} etiqueta="Guardar compra" formId="f-compra" error={errorServidor} />}>
-      <form id="f-compra" className="form" onSubmit={submit} noValidate>
-        <div className="form__row">
-          <Field label="Proveedor" error={err.proveedor}>
-            {(id) => (
-              <Select id={id} value={c.proveedor} onChange={(e) => setC({ ...c, proveedor: e.target.value })}>
-                <option value="">Selecciona</option>
-                {proveedores.map((p) => <option key={p.id} value={p.id}>{p.nombre}</option>)}
-              </Select>
-            )}
-          </Field>
-          <Field label="Bodega" error={err.bodega}>
-            {(id) => (
-              <Select id={id} value={c.bodega} onChange={(e) => setC({ ...c, bodega: e.target.value })}>
-                {bodegas.map((b) => <option key={b.id} value={b.id}>{b.nombre}</option>)}
-              </Select>
-            )}
-          </Field>
-        </div>
-        <div className="form__row form__row--3">
-          <Field label="Tipo de documento">
-            {(id) => (
-              <Select id={id} value={c.tipo_documento} onChange={(e) => setC({ ...c, tipo_documento: e.target.value })}>
-                <option>Factura</option><option>Boleta</option><option>Guía de despacho</option>
-              </Select>
-            )}
-          </Field>
-          <Field label="N° de folio" error={err.numero_folio}>
-            {(id) => <input id={id} className="input" maxLength={20} value={c.numero_folio} onChange={(e) => setC({ ...c, numero_folio: e.target.value })} />}
-          </Field>
-          <Field label="Fecha de emisión" error={err.fecha_emision}>
-            {(id) => <input id={id} className="input" type="date" value={c.fecha_emision} onChange={(e) => setC({ ...c, fecha_emision: e.target.value })} />}
-          </Field>
-        </div>
-
-        <div className="lines">
-          <div className="label">Insumos comprados</div>
-          {lineas.map((l, i) => {
-            const p = productos.find((x) => String(x.id) === String(l.producto))
-            return (
-              <div className="line" key={i}>
-                <Select aria-label="Insumo" value={l.producto} onChange={(e) => setLinea(i, 'producto', e.target.value)}>
-                  <option value="">Insumo</option>
-                  {productos.map((x) => <option key={x.id} value={x.id}>{x.nombre} ({x.codigo})</option>)}
-                </Select>
-                <input className="input" aria-label={`Cantidad${p ? ` (${p.unidad_medida})` : ''}`} type="number" inputMode="decimal" step="0.01" min="0" placeholder={p ? `Cant. (${p.unidad_medida})` : 'Cantidad'} value={l.cantidad} onChange={(e) => setLinea(i, 'cantidad', e.target.value)} />
-                <input className="input" aria-label="Precio unitario" type="number" inputMode="numeric" step="1" min="0" placeholder="Precio unit. ($)" value={l.precio_unitario} onChange={(e) => setLinea(i, 'precio_unitario', e.target.value)} />
-                <button type="button" className="icon-btn" aria-label="Quitar línea" disabled={lineas.length === 1} onClick={() => setLineas(lineas.filter((_, j) => j !== i))}><Trash2 size={16} /></button>
-              </div>
-            )
-          })}
-          {err.lineas && <span className="hint hint--error" role="alert">{err.lineas}</span>}
-          <div className="lines__foot">
-            <button type="button" className="link-btn" onClick={() => setLineas([...lineas, { producto: '', cantidad: '', precio_unitario: '' }])}><Plus size={16} /> Agregar otra línea</button>
-            <span className="lines__total">Total: <b>${Math.round(total).toLocaleString('es-CL')}</b></span>
-          </div>
-        </div>
-      </form>
-    </Modal>
-  )
-}
-
-export function InsumoModal({ productos, onClose, onSaved }) {
-  const toast = useToast()
-  const [f, setF] = useState({ codigo: '', nombre: '', categoria: '', unidad_medida: '', costo_promedio: '', stock_actual: '0', stock_minimo: '' })
+  const activas = bodegas.filter((b) => b.estado !== false)
+  const [f, setF] = useState({ codigo: '', nombre: '', categoria: '', unidad_medida: '', costo_promedio: '', stock_actual: '0', stock_minimo: '', bodega: activas[0]?.id ?? '' })
   const [err, setErr] = useState({})
   const { enviando, errorServidor, enviar } = useEnvio(onSaved, onClose)
   const categorias = [...new Set(productos.map((p) => p.categoria))]
@@ -204,6 +56,7 @@ export function InsumoModal({ productos, onClose, onSaved }) {
     if (f.costo_promedio === '' || Number(f.costo_promedio) < 0) n.costo_promedio = 'Ingresa el costo.'
     if (f.stock_minimo === '' || Number(f.stock_minimo) < 0) n.stock_minimo = 'Ingresa el mínimo.'
     if (f.stock_actual === '' || Number(f.stock_actual) < 0) n.stock_actual = 'Ingresa el stock inicial.'
+    if (Number(f.stock_actual) > 0 && !f.bodega) n.bodega = 'Elige en qué bodega queda el stock inicial.'
     setErr(n)
     if (Object.keys(n).length) return
     enviar(async () => {
@@ -211,6 +64,7 @@ export function InsumoModal({ productos, onClose, onSaved }) {
         codigo: f.codigo.trim().toUpperCase(), nombre: f.nombre.trim(), categoria: f.categoria.trim(),
         unidad_medida: f.unidad_medida.trim().toUpperCase(),
         costo_promedio: Number(f.costo_promedio).toFixed(2), stock_actual: Number(f.stock_actual).toFixed(2), stock_minimo: Number(f.stock_minimo).toFixed(2),
+        ...(Number(f.stock_actual) > 0 ? { bodega_inicial: Number(f.bodega) } : {}),
       })
       toast('Insumo añadido')
       return r
@@ -233,6 +87,11 @@ export function InsumoModal({ productos, onClose, onSaved }) {
           <Field label="Stock inicial" error={err.stock_actual}>{(id) => <input id={id} className="input" type="number" inputMode="decimal" step="0.01" min="0" value={f.stock_actual} onChange={set('stock_actual')} />}</Field>
           <Field label="Stock mínimo" error={err.stock_minimo}>{(id) => <input id={id} className="input" type="number" inputMode="decimal" step="0.01" min="0" value={f.stock_minimo} onChange={set('stock_minimo')} />}</Field>
         </div>
+        {Number(f.stock_actual) > 0 && (
+          <Field label="Bodega del stock inicial" error={err.bodega}>
+            {(id) => <Select id={id} value={f.bodega} onChange={set('bodega')}>{activas.map((b) => <option key={b.id} value={b.id}>{b.nombre}</option>)}</Select>}
+          </Field>
+        )}
       </form>
     </Modal>
   )
