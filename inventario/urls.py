@@ -10,7 +10,9 @@ from .views import (
     ProduccionLecheViewSet,
     ConsumoViewSet,
     InventarioViewSet,
-    DetalleInventarioViewSet    
+    DetalleInventarioViewSet,
+    StockBodegaViewSet,
+    login,
 )
 
 router = DefaultRouter()
@@ -24,7 +26,9 @@ router.register(r'produccion-leche', ProduccionLecheViewSet)
 router.register(r'consumos', ConsumoViewSet)
 router.register(r'inventarios', InventarioViewSet)
 router.register(r'detalle-inventarios', DetalleInventarioViewSet)
+router.register(r'stock-bodega', StockBodegaViewSet, basename='stock-bodega')
 
 urlpatterns = [
+    path('auth/login/', login),
     path('', include(router.urls)),
 ]

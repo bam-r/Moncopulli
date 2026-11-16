@@ -6,6 +6,7 @@ import { Brand } from '../components/AppLayout'
 import { Button, Field, Modal } from '../components/ui'
 import { formatRut, isValidRut } from '../lib/rut'
 import { esAdmin } from '../lib/format'
+import { inicioPara } from '../components/nav'
 
 export default function Login() {
   const { usuario, login } = useAuth()
@@ -19,7 +20,7 @@ export default function Login() {
   const [olvido, setOlvido] = useState(false)
   const [correoRecuperacion, setCorreoRecuperacion] = useState('')
 
-  if (usuario) return <Navigate to={esAdmin(usuario) ? '/resumen' : '/stock'} replace />
+  if (usuario) return <Navigate to={inicioPara(esAdmin(usuario))} replace />
 
   const submit = async (e) => {
     e.preventDefault()
@@ -31,7 +32,7 @@ export default function Login() {
     setEnviando(true)
     try {
       const u = await login(rut, clave)
-      navigate(esAdmin(u) ? '/resumen' : '/stock', { replace: true })
+      navigate(inicioPara(esAdmin(u)), { replace: true })
     } catch (err) {
       setErrorGeneral(err.message || 'No se pudo iniciar sesión.')
     } finally { setEnviando(false) }

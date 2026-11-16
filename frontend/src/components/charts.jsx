@@ -76,7 +76,9 @@ export function BarList({ items }) {
   )
 }
 
-export function ColumnChart({ datos, unidad }) {
+const fmt = (v) => (Number.isInteger(v) ? miles(v) : (Math.round(v * 100) / 100).toLocaleString('es-CL'))
+
+export function ColumnChart({ datos, unidad, fechaTexto = dmy, semanal = false }) {
   const { show, hide, el } = useTip()
   const max = Math.max(...datos.map((d) => d.valor), 1)
   const { paso, tope } = escala(max)
@@ -84,12 +86,12 @@ export function ColumnChart({ datos, unidad }) {
   for (let t = 0; t <= tope; t += paso) ticks.push(t)
   const cadaN = Math.max(1, Math.ceil(datos.length / 7))
   const diaMes = (d) => `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}`
-  const contenido = (d) => <><b>{miles(d.valor)} {unidad}</b><span>{dmy(d.fecha)}</span></>
+  const contenido = (d) => <><b>{fmt(d.valor)} {unidad}</b><span>{semanal ? 'Semana del ' : ''}{fechaTexto(d.fecha)}</span></>
   return (
-    <div className="cols" role="img" aria-label={`Gráfico de columnas por día, máximo ${miles(max)} ${unidad}. Los datos están disponibles con "Ver tabla".`}>
+    <div className="cols" role="img" aria-label={`Gráfico de columnas por día, máximo ${fmt(max)} ${unidad}. Los datos están disponibles con "Ver tabla".`}>
       <div className="cols__plot">
         {ticks.map((t) => (
-          <div key={t} className="cols__tick" style={{ bottom: `${(t / tope) * 100}%` }}><span>{miles(t)}</span></div>
+          <div key={t} className="cols__tick" style={{ bottom: `${(t / tope) * 100}%` }}><span>{fmt(t)}</span></div>
         ))}
         <div className="cols__bars">
           {datos.map((d) => (

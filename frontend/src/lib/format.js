@@ -41,4 +41,8 @@ export const esActivo = (u) => String(u?.estado ?? '').toLowerCase().startsWith(
 export const esAnulado = (r) => String(r?.estado ?? '').toLowerCase().startsWith('anul')
 
 export const miles = (v) => Math.round(Number(v ?? 0)).toLocaleString('es-CL')
-export const pesos = (v) => `$${miles(v)}`
+export const pesos = (v) => `${Number(v) < 0 ? '-' : ''}$${miles(Math.abs(v))}`
+
+// "lunes 16 de noviembre de 2026" y "00:45:12" (para la vista previa de un registro)
+export const fechaLarga = (d) => d.toLocaleDateString('es-CL', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
+export const horaCompleta = (d) => d.toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })

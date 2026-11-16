@@ -17,8 +17,8 @@ export default defineConfig(({ mode }) => {
           short_name: 'Moncopulli',
           description: 'Gestión de stock, compras e inventario para Agrícola Moncopulli.',
           lang: 'es-CL',
-          theme_color: '#296b46',
-          background_color: '#f8f9fa',
+          theme_color: '#17653a',
+          background_color: '#e8ece9',
           display: 'standalone',
           start_url: '/',
           icons: [

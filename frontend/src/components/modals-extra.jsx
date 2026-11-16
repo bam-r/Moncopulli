@@ -4,6 +4,7 @@ import { actualizar, anularInventario, anularConsumo, crear, registrarInventario
 import { useToast } from './Toast'
 import { formatRut, isValidRut } from '../lib/rut'
 import { num } from '../lib/format'
+import { stockEn } from '../lib/analisis'
 
 const hoyISO = () => {
   const d = new Date()
@@ -52,7 +53,7 @@ export function InventarioModal({ productos, bodegas, usuario, onClose, onSaved 
     enviar(async () => {
       const r = await registrarInventario({
         cabecera: { fecha: cab.fecha, estado: 'CONFIRMADO', usuario: usuario.id, bodega: Number(cab.bodega) },
-        lineas: contados.map((p) => ({ producto: p.id, stock_sistema: p.stock_actual, stock_real: reales[p.id] })),
+        lineas: contados.map((p) => ({ producto: p.id, stock_real: reales[p.id] })),
       })
       toast('Inventario registrado')
       return r
@@ -70,18 +71,19 @@ export function InventarioModal({ productos, bodegas, usuario, onClose, onSaved 
           <div className="count__head"><span>Insumo</span><span className="right">En sistema</span><span className="right">Stock real</span><span className="right">Diferencia</span></div>
           {productos.map((p) => {
             const real = reales[p.id]
-            const dif = real === undefined || real === '' ? null : Number(real) - Number(p.stock_actual)
+            const enSistema = stockEn(p, cab.bodega)
+            const dif = real === undefined || real === '' ? null : Number(real) - enSistema
             return (
               <div className="count__row" key={p.id}>
                 <span><span className="name">{p.nombre}</span><span className="sub">{p.codigo}</span></span>
-                <span className="right">{num(p.stock_actual)} {p.unidad_medida}</span>
+                <span className="right">{num(enSistema)} {p.unidad_medida}</span>
                 <input className="input" type="number" inputMode="decimal" step="0.01" min="0" aria-label={`Stock real de ${p.nombre}`} placeholder="—" value={real ?? ''} onChange={(e) => setReales({ ...reales, [p.id]: e.target.value })} />
                 <span className={`right diff ${dif < 0 ? 'diff--neg' : ''}`}>{dif === null ? '' : `${dif > 0 ? '+' : ''}${num(dif)}`}</span>
               </div>
             )
           })}
         </div>
-        <p className="hint">Solo se guardan los insumos con stock real anotado. Guardar el inventario no modifica el stock actual.</p>
+        <p className="hint">Se compara contra lo que el sistema tiene en la bodega elegida. Solo se guardan los insumos con stock real anotado. Guardar el inventario no modifica el stock.</p>
       </form>
     </Modal>
   )
