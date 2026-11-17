@@ -1,14 +1,26 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { listar } from './services'
+import { leerCache, listar } from './services'
 import { EVENTO_DATOS, EVENTO_PENDIENTES, leerPendientes } from './pending'
 
 export function useRecursos(nombres) {
-  const [estado, setEstado] = useState({ data: {}, loading: true, error: null })
+  const [estado, setEstado] = useState(() => {
+    const data = {}
+    let completo = true
+    for (const n of nombres) {
+      const enCache = leerCache(n)
+      if (enCache !== undefined) data[n] = enCache
+      else completo = false
+    }
+    return { data, loading: !completo, error: null }
+  })
   const clave = nombres.join(',')
   const vivo = useRef(true)
 
   const cargar = useCallback(() => {
-    setEstado((s) => ({ ...s, loading: true, error: null }))
+    setEstado((s) => {
+      const tieneDatos = nombres.every((n) => s.data[n] !== undefined)
+      return { ...s, loading: !tieneDatos, error: null }
+    })
     return Promise.all(nombres.map((n) => listar(n)))
       .then((res) => vivo.current && setEstado({ data: Object.fromEntries(nombres.map((n, i) => [n, res[i]])), loading: false, error: null }))
       .catch((e) => vivo.current && setEstado((s) => ({ ...s, loading: false, error: e.message || 'No se pudo cargar' })))
@@ -18,7 +30,12 @@ export function useRecursos(nombres) {
     vivo.current = true
     cargar()
     window.addEventListener(EVENTO_DATOS, cargar)
-    return () => { vivo.current = false; window.removeEventListener(EVENTO_DATOS, cargar) }
+    window.addEventListener('online', cargar)
+    return () => {
+      vivo.current = false
+      window.removeEventListener(EVENTO_DATOS, cargar)
+      window.removeEventListener('online', cargar)
+    }
   }, [cargar])
 
   return { ...estado, reload: cargar }
