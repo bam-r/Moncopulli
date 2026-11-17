@@ -2,11 +2,12 @@ from datetime import date, timedelta
 from decimal import Decimal
 
 from django.contrib.auth.hashers import make_password
+from django.db import IntegrityError, transaction
 from django.test import override_settings
 from django.utils import timezone
 from rest_framework.test import APITestCase
 
-from .models import Bodega, Consumo, Producto, Proveedor, StockBodega, Usuario
+from .models import Bodega, Consumo, DocumentoCompra, Producto, Proveedor, StockBodega, Usuario
 
 
 def crear_usuario(rut, rol="TRABAJADOR", estado="Activo", clave="clave123", plano=False):
@@ -27,11 +28,11 @@ class BaseApi(APITestCase):
         self.prod = Producto.objects.create(codigo="A-1", nombre="Sal", categoria="Alim", unidad_medida="KG",
                                             costo_promedio=100, stock_actual=0, stock_minimo=10)
 
-    def comprar(self, cantidad, bodega=None, folio="1"):
+    def comprar(self, cantidad, bodega=None, folio="1", precio=100):
         return self.client.post("/api/documentos-compra/", {
             "numero_folio": folio, "tipo_documento": "Factura", "fecha_emision": str(date.today()),
             "proveedor": self.prov.id, "bodega": (bodega or self.b1).id, "usuario": self.admin.id,
-            "detalles": [{"producto": self.prod.id, "cantidad": cantidad, "precio_unitario": 100}],
+            "detalles": [{"producto": self.prod.id, "cantidad": cantidad, "precio_unitario": precio}],
         }, format="json")
 
     def retirar(self, cantidad, bodega=None, **extra):
@@ -92,9 +93,27 @@ class StockTests(BaseApi):
 
     def test_folio_repetido_del_mismo_proveedor_se_rechaza(self):
         self.comprar(5)
-        self.assertEqual(self.comprar(5).status_code, 400)
+        r = self.comprar(5)
+        self.assertEqual(r.status_code, 400)
+        self.assertIn("numero_folio", r.data)
         self.prod.refresh_from_db()
         self.assertEqual(self.prod.stock_actual, 5)
+        # También a nivel de base de datos (sin pasar por la API)
+        with self.assertRaises(IntegrityError), transaction.atomic():
+            DocumentoCompra.objects.create(
+                numero_folio="1", tipo_documento="Factura", fecha_emision=date.today(),
+                proveedor=self.prov, bodega=self.b1, usuario=self.admin,
+            )
+
+    def test_compra_recalcula_costo_promedio_ponderado(self):
+        # Sin stock previo: toma el precio de la compra (200)
+        self.comprar(10, self.b1, folio="1", precio=200)
+        self.prod.refresh_from_db()
+        self.assertEqual(self.prod.costo_promedio, Decimal("200.00"))
+        # Con 10 a $200 + 30 a $400 -> (2000 + 12000) / 40 = $350.00
+        self.comprar(30, self.b2, folio="2", precio=400)
+        self.prod.refresh_from_db()
+        self.assertEqual(self.prod.costo_promedio, Decimal("350.00"))
 
     def test_compra_invalida_no_deja_nada_a_medias(self):
         r = self.client.post("/api/documentos-compra/", {

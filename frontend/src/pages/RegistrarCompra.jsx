@@ -7,20 +7,29 @@ import { registrarCompra } from '../api/services'
 import { Estado, Field, Modal, PageHeader, Select } from '../components/ui'
 import ProductoPicker from '../components/ProductoPicker'
 import { useToast } from '../components/Toast'
-import { fechaLarga, horaCompleta, num, pesos } from '../lib/format'
+import { fechaLarga, horaCompleta, pesos } from '../lib/format'
 
 const hoyISO = () => {
   const d = new Date()
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 const TIPOS = ['Factura', 'Boleta', 'Guía de despacho']
+const TASA_IVA = 0.19
 
 export default function RegistrarCompra() {
   const { usuario } = useAuth()
   const toast = useToast()
   const ahora = useAhora()
   const { data, loading, error, reload } = useRecursos(['productos', 'proveedores', 'bodegas'])
-  const [c, setC] = useState({ proveedor: '', bodega: '', tipo_documento: 'Factura', numero_folio: '', fecha_emision: hoyISO() })
+  const [c, setC] = useState({
+    proveedor: '',
+    bodega: '',
+    tipo_documento: 'Factura',
+    numero_folio: '',
+    fecha_emision: hoyISO(),
+    condicion_pago: 'CONTADO',
+    dias_credito: '30',
+  })
   const [lineas, setLineas] = useState([]) // { producto, cantidad, precio_unitario }
   const [buscando, setBuscando] = useState(false)
   const [err, setErr] = useState({})
@@ -34,8 +43,22 @@ export default function RegistrarCompra() {
   const prod = useMemo(() => new Map(productos.map((p) => [p.id, p])), [productos])
   const bodegaId = c.bodega || bodegas[0]?.id || ''
 
-  const total = lineas.reduce((s, l) => s + Number(l.cantidad || 0) * Number(l.precio_unitario || 0), 0)
+  const esFactura = c.tipo_documento === 'Factura'
+  const esCredito = esFactura && c.condicion_pago === 'CREDITO'
+  const subtotalNeto = Math.round(lineas.reduce((s, l) => s + Number(l.cantidad || 0) * Number(l.precio_unitario || 0), 0))
+  const iva = esFactura ? Math.round(subtotalNeto * TASA_IVA) : 0
+  const total = subtotalNeto + iva
+
   const setLinea = (id, k, v) => setLineas(lineas.map((l) => (l.producto === id ? { ...l, [k]: v } : l)))
+
+  const elegirProveedor = (idProv) => {
+    const pv = proveedores.find((p) => String(p.id) === String(idProv))
+    setC((prev) => ({
+      ...prev,
+      proveedor: idProv,
+      dias_credito: pv?.plazo_pago ? String(pv.plazo_pago) : prev.dias_credito,
+    }))
+  }
 
   const agregar = (p) => {
     if (lineas.some((l) => l.producto === p.id)) {
@@ -52,6 +75,7 @@ export default function RegistrarCompra() {
     if (!bodegaId) n.bodega = 'Elige la bodega donde queda lo comprado.'
     if (!c.numero_folio.trim()) n.numero_folio = 'Ingresa el N° del documento.'
     if (!c.fecha_emision) n.fecha_emision = 'Ingresa la fecha del documento.'
+    if (esCredito && !(Number(c.dias_credito) > 0)) n.dias_credito = 'Ingresa los días de crédito (mayor a 0).'
     if (!lineas.length) n.lineas = 'Agrega al menos un insumo.'
     else if (lineas.some((l) => !(Number(l.cantidad) > 0) || l.precio_unitario === '' || Number(l.precio_unitario) < 0)) n.lineas = 'Completa cantidad y precio en cada insumo.'
     setErr(n)
@@ -62,13 +86,45 @@ export default function RegistrarCompra() {
     if (!validar() || enviando) return
     setEnviando(true); setErrorEnvio('')
     try {
+      const dias = esCredito ? Math.round(Number(c.dias_credito)) : null
       const doc = await registrarCompra({
-        cabecera: { ...c, bodega: Number(bodegaId), numero_folio: c.numero_folio.trim(), proveedor: Number(c.proveedor), usuario: usuario.id },
+        cabecera: {
+          proveedor: Number(c.proveedor),
+          bodega: Number(bodegaId),
+          tipo_documento: c.tipo_documento,
+          numero_folio: c.numero_folio.trim(),
+          fecha_emision: c.fecha_emision,
+          condicion_pago: esFactura ? c.condicion_pago : 'CONTADO',
+          dias_credito: dias,
+          usuario: usuario.id,
+        },
         lineas,
       })
-      setHecho({ doc, proveedor: proveedores.find((p) => p.id === Number(c.proveedor)), bodega: bodegas.find((b) => b.id === Number(bodegaId)), total, n: lineas.length, tipo: c.tipo_documento, folio: c.numero_folio.trim() })
+      setHecho({
+        doc,
+        proveedor: proveedores.find((p) => p.id === Number(c.proveedor)),
+        bodega: bodegas.find((b) => b.id === Number(bodegaId)),
+        esFactura,
+        esCredito,
+        diasCredito: dias,
+        subtotalNeto,
+        iva,
+        total,
+        n: lineas.length,
+        tipo: c.tipo_documento,
+        folio: c.numero_folio.trim(),
+      })
       toast('Compra registrada')
-      setLineas([]); setC({ proveedor: '', bodega: '', tipo_documento: 'Factura', numero_folio: '', fecha_emision: hoyISO() })
+      setLineas([])
+      setC({
+        proveedor: '',
+        bodega: '',
+        tipo_documento: 'Factura',
+        numero_folio: '',
+        fecha_emision: hoyISO(),
+        condicion_pago: 'CONTADO',
+        dias_credito: '30',
+      })
       reload()
     } catch (e) {
       setErrorEnvio(e.message || 'No se pudo registrar la compra.')
@@ -90,7 +146,16 @@ export default function RegistrarCompra() {
           <dl className="resumen-registro">
             <div><dt>Documento</dt><dd>{hecho.tipo} N° {hecho.folio}</dd></div>
             <div><dt>Proveedor</dt><dd>{hecho.proveedor?.nombre}</dd></div>
+            {hecho.esFactura && (
+              <div><dt>Condición de pago</dt><dd>{hecho.esCredito ? `A crédito (${hecho.diasCredito} días)` : 'Al contado'}</dd></div>
+            )}
             <div><dt>Insumos</dt><dd>{hecho.n}</dd></div>
+            {hecho.esFactura && (
+              <>
+                <div><dt>Subtotal neto</dt><dd>{pesos(hecho.subtotalNeto)}</dd></div>
+                <div><dt>IVA (19%)</dt><dd>{pesos(hecho.iva)}</dd></div>
+              </>
+            )}
             <div><dt>Total</dt><dd>{pesos(hecho.total)}</dd></div>
             <div><dt>Registrado por</dt><dd>{usuario.nombre_completo}</dd></div>
           </dl>
@@ -114,7 +179,7 @@ export default function RegistrarCompra() {
               <div className="form__row">
                 <Field label="Proveedor" error={err.proveedor}>
                   {(id) => (
-                    <Select id={id} value={c.proveedor} onChange={(e) => setC({ ...c, proveedor: e.target.value })}>
+                    <Select id={id} value={c.proveedor} onChange={(e) => elegirProveedor(e.target.value)}>
                       <option value="">Elige un proveedor</option>
                       {proveedores.map((p) => <option key={p.id} value={p.id}>{p.nombre}</option>)}
                     </Select>
@@ -139,6 +204,26 @@ export default function RegistrarCompra() {
                   {(id) => <input id={id} className="input" type="date" max={hoyISO()} value={c.fecha_emision} onChange={(e) => setC({ ...c, fecha_emision: e.target.value })} />}
                 </Field>
               </div>
+              {esFactura && (
+                <div className="form__row">
+                  <Field label="Condición de pago">
+                    {(id) => (
+                      <Select id={id} value={c.condicion_pago} onChange={(e) => setC({ ...c, condicion_pago: e.target.value })}>
+                        <option value="CONTADO">Al contado</option>
+                        <option value="CREDITO">A crédito</option>
+                      </Select>
+                    )}
+                  </Field>
+                  {esCredito && (
+                    <Field label="Plazo de crédito (días)" error={err.dias_credito}>
+                      {(id) => (
+                        <input id={id} className="input" type="number" inputMode="numeric" min="1" step="1" placeholder="Ej. 30"
+                          value={c.dias_credito} onChange={(e) => setC({ ...c, dias_credito: e.target.value })} />
+                      )}
+                    </Field>
+                  )}
+                </div>
+              )}
             </div>
           </section>
 
@@ -160,7 +245,7 @@ export default function RegistrarCompra() {
                         <input className="input" type="number" inputMode="decimal" min="0" step="0.01" value={l.cantidad} onChange={(e) => setLinea(l.producto, 'cantidad', e.target.value)} />
                       </label>
                       <label className="field">
-                        <span className="label">Precio unitario ($)</span>
+                        <span className="label">Precio unitario {esFactura ? 'neto ($)' : '($)'}</span>
                         <input className="input" type="number" inputMode="numeric" min="0" step="1" value={l.precio_unitario} onChange={(e) => setLinea(l.producto, 'precio_unitario', e.target.value)} />
                       </label>
                       <div className="linea-card__sub"><span>Subtotal</span><b>{pesos(Number(l.cantidad || 0) * Number(l.precio_unitario || 0))}</b></div>
@@ -185,8 +270,17 @@ export default function RegistrarCompra() {
                 <div><dt><UserRound size={18} /> Registrada por</dt><dd>{usuario.nombre_completo}</dd></div>
                 <div><dt>Proveedor</dt><dd>{proveedores.find((p) => p.id === Number(c.proveedor))?.nombre ?? '—'}</dd></div>
                 <div><dt>Bodega</dt><dd>{bodegas.find((b) => b.id === Number(bodegaId))?.nombre ?? '—'}</dd></div>
-                <div><dt>Documento</dt><dd>{c.numero_folio ? `${c.tipo_documento} N° ${c.numero_folio}` : '—'}</dd></div>
+                <div><dt>Documento</dt><dd>{c.numero_folio ? `${c.tipo_documento} N° ${c.numero_folio}` : c.tipo_documento}</dd></div>
+                {esFactura && (
+                  <div><dt>Condición de pago</dt><dd>{esCredito ? `A crédito (${c.dias_credito || 0} días)` : 'Al contado'}</dd></div>
+                )}
                 <div><dt>Insumos</dt><dd>{lineas.length}</dd></div>
+                {esFactura && (
+                  <>
+                    <div><dt>Subtotal neto</dt><dd>{pesos(subtotalNeto)}</dd></div>
+                    <div><dt>IVA (19%)</dt><dd>{pesos(iva)}</dd></div>
+                  </>
+                )}
                 <div className="preview__total"><dt>Total</dt><dd>{pesos(total)}</dd></div>
               </dl>
             </div>

@@ -90,9 +90,19 @@ class DocumentoCompra(models.Model):
     numero_folio = models.CharField(max_length=20)
     tipo_documento = models.CharField(max_length=30)
     fecha_emision = models.DateField()
+    condicion_pago = models.CharField(max_length=20, default="CONTADO", blank=True)
+    dias_credito = models.IntegerField(null=True, blank=True)
     proveedor = models.ForeignKey(Proveedor, on_delete=models.PROTECT)
     bodega = models.ForeignKey(Bodega, on_delete=models.PROTECT)
     usuario = models.ForeignKey(Usuario, on_delete=models.PROTECT)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["proveedor", "tipo_documento", "numero_folio"],
+                name="folio_unico_por_proveedor_y_tipo",
+            ),
+        ]
 
     def __str__(self):
         return f"{self.tipo_documento} N° {self.numero_folio}"

@@ -1,7 +1,7 @@
 from datetime import timedelta
 
 from django.contrib.auth.hashers import make_password
-from django.db import transaction
+from django.db import IntegrityError, transaction
 from django.utils import timezone
 from rest_framework import serializers
 
@@ -132,7 +132,12 @@ class DetalleDocumentoSerializer(serializers.ModelSerializer):
 
 def crear_detalle(documento, datos):
     datos = {k: v for k, v in datos.items() if k != "documento"}
-    mover_stock(datos["producto"].id, documento.bodega_id, datos["cantidad"])
+    mover_stock(
+        datos["producto"].id,
+        documento.bodega_id,
+        datos["cantidad"],
+        precio_unitario=datos["precio_unitario"],
+    )
     return DetalleDocumento.objects.create(documento=documento, **datos)
 
 
@@ -149,6 +154,7 @@ class DocumentoCompraSerializer(serializers.ModelSerializer):
     class Meta:
         model = DocumentoCompra
         fields = '__all__'
+        validators = []
 
     def validate(self, datos):
         if not datos["bodega"].estado:
@@ -169,7 +175,10 @@ class DocumentoCompraSerializer(serializers.ModelSerializer):
     @transaction.atomic
     def create(self, validated_data):
         detalles = validated_data.pop("detalles", [])
-        documento = DocumentoCompra.objects.create(**validated_data)
+        try:
+            documento = DocumentoCompra.objects.create(**validated_data)
+        except IntegrityError:
+            raise serializers.ValidationError({"numero_folio": ["Ya hay un documento con ese folio para este proveedor."]})
         for d in detalles:
             crear_detalle(documento, d)
         marcar_ultima_compra(documento)

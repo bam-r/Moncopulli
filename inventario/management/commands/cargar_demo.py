@@ -153,8 +153,8 @@ class Command(BaseCommand):
                         doc = DocumentoCompra.objects.create(
                             numero_folio=str(folio), tipo_documento=rnd.choice(["Factura", "Factura", "Guía de despacho"]), fecha_emision=dia,
                             proveedor=prov, bodega=bodegas[destino], usuario=admin)
-                        mover_stock(p.id, bodegas[destino].id, cantidad)
                         precio = int(float(p.costo_promedio) * rnd.uniform(0.96, 1.06))
+                        mover_stock(p.id, bodegas[destino].id, cantidad, precio_unitario=precio)
                         DetalleDocumento.objects.create(documento=doc, producto=p, cantidad=cantidad, precio_unitario=precio)
                         if prov.ultima_compra is None or prov.ultima_compra < dia:
                             prov.ultima_compra = dia

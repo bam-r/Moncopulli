@@ -1,11 +1,15 @@
-import { useMemo, useState } from 'react'
-import { ArrowUpRight, Download, Printer, ShoppingCart, Users, Wallet, Package, TriangleAlert, Scale, ClipboardList, Hourglass } from 'lucide-react'
+import { useMemo, useRef, useState } from 'react'
+import {
+  ArrowUpRight, CalendarClock, ClipboardList, Download, Hourglass, Package, Printer,
+  Scale, ShoppingCart, TrendingUp, TriangleAlert, Truck, Users, Wallet,
+} from 'lucide-react'
 import { useAuth } from '../auth/AuthContext'
 import { useRecursos } from '../api/hooks'
 import { Badge, Estado, LinkButton, PageHeader, Select, StatCard } from '../components/ui'
-import { BarList, ColumnChart, GraficoCard } from '../components/charts'
+import { BarList, ColumnChart, GraficoCard, LineChart } from '../components/charts'
+import ProductoPicker from '../components/ProductoPicker'
 import { descargarCSV } from '../lib/csv'
-import { dmy, esAnulado, hm, miles, num, parseDate, pesos } from '../lib/format'
+import { dmy, esAnulado, hm, num, parseDate, pesos } from '../lib/format'
 import { ESTADO_STOCK, estadoStock } from '../lib/stock'
 import {
   PERIODOS, agrupar, agruparSemanas, comprasPorTrabajador, diasDeStock, documentosConTotal, enRango, fechaConsumo,
@@ -18,9 +22,11 @@ const TABS = [
   { id: 'compras', label: 'Compras', icon: ShoppingCart },
   { id: 'stock', label: 'Stock', icon: Package },
   { id: 'desviacion', label: 'Desviación', icon: Scale },
+  { id: 'precios', label: 'Variación de precio', icon: TrendingUp },
 ]
 const fecha = (d) => dmy(d)
 const signo = (v) => `${v > 0 ? '+' : ''}${num(v)}`
+const fmtPct = (v) => `${v > 0 ? '+' : ''}${v.toFixed(1).replace('.', ',')}%`
 
 function Tabla({ columnas, filas, vacio = 'No hay datos en este período.', clase = '' }) {
   return (
@@ -53,8 +59,11 @@ export default function Reportes() {
   const [persona, setPersona] = useState('')
   const [productoId, setProductoId] = useState('')
   const [catStock, setCatStock] = useState('')
+  const [precioProdId, setPrecioProdId] = useState(null)
+  const detallePrecioRef = useRef(null)
 
-  const rango = useMemo(() => rangoUltimos(Number(periodo)), [periodo])
+  const diasPeriodo = Number(periodo)
+  const rango = useMemo(() => rangoUltimos(diasPeriodo), [diasPeriodo])
   const periodoTxt = `${PERIODOS[periodo]} (${fecha(rango.ini)} al ${fecha(sumarDias(rango.fin, -1))})`
 
   const base = useMemo(() => {
@@ -77,8 +86,21 @@ export default function Reportes() {
       id, p: base.prod.get(id), retiros: l.length, cantidad: l.reduce((s, c) => s + Number(c.cantidad_retirada), 0), valor: l.reduce((s, c) => s + valor(c), 0),
     })).sort((a, b) => b.valor - a.valor)
     const trabajadores = retirosPorTrabajador(data.consumos.filter((c) => !persona || String(c.usuario) === persona), data.usuarios, data.productos, rango)
-    return { lista, porInsumo, trabajadores, valorTotal: lista.reduce((s, c) => s + valor(c), 0), personas: new Set(lista.map((c) => c.usuario)).size }
-  }, [base, data, rango, persona])
+    const valorTotal = lista.reduce((s, c) => s + valor(c), 0)
+    const gastoDiario = valorTotal / Math.max(diasPeriodo, 1)
+    const gastoSemanal = gastoDiario * 7
+    const gastoMensual = gastoDiario * 30
+    return {
+      lista,
+      porInsumo,
+      trabajadores,
+      valorTotal,
+      gastoDiario,
+      gastoSemanal,
+      gastoMensual,
+      personas: new Set(lista.map((c) => c.usuario)).size,
+    }
+  }, [base, data, rango, persona, diasPeriodo])
 
   const masRetirado = ret ? [...ret.porInsumo].sort((a, b) => b.retiros - a.retiros)[0] : null
   const productoSel = productoId ? Number(productoId) : ret?.porInsumo[0]?.id
@@ -86,20 +108,33 @@ export default function Reportes() {
     if (!ret || !productoSel) return null
     const reg = ret.lista.filter((c) => c.producto === productoSel)
     const diaria = serieDiaria(reg, { fecha: fechaConsumo, valor: (c) => Number(c.cantidad_retirada) }, rango)
-    const semanal = Number(periodo) > 31
+    const semanal = diasPeriodo > 31
     const total = reg.reduce((s, c) => s + Number(c.cantidad_retirada), 0)
-    return { serie: semanal ? agruparSemanas(diaria) : diaria, semanal, total, retiros: reg.length, porDia: total / Number(periodo) }
-  }, [ret, productoSel, rango, periodo])
+    return { serie: semanal ? agruparSemanas(diaria) : diaria, semanal, total, retiros: reg.length, porDia: total / diasPeriodo }
+  }, [ret, productoSel, rango, diasPeriodo])
 
   /* ───── Compras ───── */
   const com = useMemo(() => {
     if (!base) return null
     const docs = base.docs.filter((d) => enRango(d.fecha, rango) && (!persona || String(d.usuario) === persona)).sort((a, b) => b.fecha - a.fecha)
     const total = docs.reduce((s, d) => s + d.total, 0)
-    const porProv = [...agrupar(docs, (d) => d.proveedor).entries()].map(([id, l]) => ({ id, nombre: base.prov.get(id)?.nombre ?? 'Proveedor', n: l.length, total: l.reduce((s, d) => s + d.total, 0) })).sort((a, b) => b.total - a.total)
+    const porProv = [...agrupar(docs, (d) => d.proveedor).entries()]
+      .map(([id, l]) => ({ id, nombre: base.prov.get(id)?.nombre ?? 'Proveedor', n: l.length, total: l.reduce((s, d) => s + d.total, 0) }))
+      .sort((a, b) => b.total - a.total)
+    const provPrincipal = porProv[0] ?? null
+    const pctProv = provPrincipal && total > 0 ? Math.round((provPrincipal.total / total) * 100) : 0
     const gasto = serieDiaria(docs, { fecha: (d) => d.fecha, valor: (d) => d.total }, rango)
-    return { docs, total, porProv, trabajadores: comprasPorTrabajador(base.docs.filter((d) => !persona || String(d.usuario) === persona), data.usuarios, rango), semanal: Number(periodo) > 31, gasto }
-  }, [base, data, rango, persona, periodo])
+    return {
+      docs,
+      total,
+      porProv,
+      provPrincipal,
+      pctProv,
+      trabajadores: comprasPorTrabajador(base.docs.filter((d) => !persona || String(d.usuario) === persona), data.usuarios, rango),
+      semanal: diasPeriodo > 31,
+      gasto,
+    }
+  }, [base, data, rango, persona, diasPeriodo])
 
   /* ───── Stock ───── */
   const stock = useMemo(() => {
@@ -129,8 +164,84 @@ export default function Reportes() {
     return { porInv, porProd, pct: sisT ? ((realT - sisT) / sisT) * 100 : 0, valor: det.reduce((s, d) => s + valorDe(d), 0), conDif: porProd.length }
   }, [base, data, rango])
 
+  /* ───── Variación de precio (compras históricas por insumo y por categoría) ───── */
+  const precios = useMemo(() => {
+    if (!base) return null
+    const docMap = new Map(base.docs.map((d) => [d.id, d]))
+    const porProducto = new Map()
+
+    data.productos.forEach((p) => porProducto.set(p.id, []))
+    data['detalle-documentos'].forEach((det) => {
+      const doc = docMap.get(det.documento)
+      if (!doc || !porProducto.has(det.producto)) return
+      porProducto.get(det.producto).push({
+        id: det.id,
+        documentoId: doc.id,
+        fecha: doc.fecha,
+        folio: doc.numero_folio,
+        tipo: doc.tipo_documento,
+        proveedorId: doc.proveedor,
+        proveedor: base.prov.get(doc.proveedor)?.nombre ?? 'Proveedor',
+        cantidad: Number(det.cantidad),
+        precio: Number(det.precio_unitario),
+      })
+    })
+
+    const resumenProd = new Map()
+    porProducto.forEach((lista, id) => {
+      lista.sort((a, b) => a.fecha - b.fecha || a.documentoId - b.documentoId || a.id - b.id)
+      const puntos = lista.map((item, idx) => {
+        const prev = idx > 0 ? lista[idx - 1] : null
+        const diffPesos = prev ? item.precio - prev.precio : null
+        const diffPct = prev && prev.precio > 0 ? ((item.precio - prev.precio) / prev.precio) * 100 : null
+        return {
+          ...item,
+          key: item.id,
+          valor: item.precio,
+          diffPesos,
+          diffPct,
+          detalle: `${item.tipo} N° ${item.folio} · ${item.proveedor} (${num(item.cantidad)} ${base.prod.get(id)?.unidad_medida ?? ''})`,
+        }
+      })
+      const primero = puntos[0]?.precio ?? Number(base.prod.get(id)?.costo_promedio ?? 0)
+      const ultimo = puntos[puntos.length - 1]?.precio ?? primero
+      const diff = ultimo - primero
+      const pct = primero > 0 ? ((ultimo - primero) / primero) * 100 : 0
+      resumenProd.set(id, {
+        id,
+        producto: base.prod.get(id),
+        puntos,
+        compras: puntos.length,
+        primero,
+        ultimo,
+        fechaPrimero: puntos[0]?.fecha ?? null,
+        fechaUltimo: puntos[puntos.length - 1]?.fecha ?? null,
+        diff,
+        pct,
+      })
+    })
+
+    const categorias = [...new Set(data.productos.map((p) => p.categoria))].sort((a, b) => a.localeCompare(b, 'es'))
+    const porCategoria = categorias.map((cat) => {
+      const items = data.productos.filter((p) => p.categoria === cat).map((p) => resumenProd.get(p.id)).filter(Boolean)
+      const conCompras = items.filter((x) => x.compras > 1)
+      const baseItems = conCompras.length ? conCompras : items
+      const pct = baseItems.length ? baseItems.reduce((s, x) => s + x.pct, 0) / baseItems.length : 0
+      const mayor = [...items].sort((a, b) => Math.abs(b.pct) - Math.abs(a.pct))[0] ?? null
+      return {
+        categoria: cat,
+        pct,
+        insumos: items.length,
+        mayor,
+      }
+    })
+
+    const idInicial = precioProdId ?? [...resumenProd.values()].sort((a, b) => b.pct - a.pct)[0]?.id ?? data.productos[0]?.id
+    return { resumenProd, porCategoria, seleccionado: resumenProd.get(idInicial) ?? null }
+  }, [base, data, precioProdId])
+
   const cabecera = (
-    <PageHeader title="Reportes" subtitle="Retiros, compras, stock y desviación. Puedes descargarlos en Excel o imprimirlos."
+    <PageHeader title="Reportes" subtitle="Retiros, compras, stock, desviación y variación de precios. Puedes descargarlos en Excel o imprimirlos."
       actions={<button type="button" className="btn btn--secondary" onClick={() => window.print()}><Printer size={20} /> Imprimir / PDF</button>} />
   )
   if (loading && !base) return <>{cabecera}<Estado cargando /></>
@@ -138,15 +249,20 @@ export default function Reportes() {
 
   const nombre = (id) => base.usu.get(id)?.nombre_completo ?? '—'
   const csv = (archivo, cols, filas) => descargarCSV(`${archivo}_${periodo}dias.csv`, cols, filas)
-  const conPeriodo = tab !== 'stock'
+  const conPeriodo = tab !== 'stock' && tab !== 'precios'
   const conPersona = tab === 'retiros' || tab === 'compras'
+
+  const elegirInsumoPrecio = (p) => {
+    setPrecioProdId(p.id)
+    setTimeout(() => detallePrecioRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 40)
+  }
 
   return (
     <>
       {cabecera}
       <div className="print-head">
         <b>Reporte de {TABS.find((t) => t.id === tab).label.toLowerCase()} · Agrícola Moncopulli</b>
-        <span>{conPeriodo ? periodoTxt : 'Estado actual del stock'} · Generado el {dmy(new Date())} {hm(new Date())} por {usuario.nombre_completo}</span>
+        <span>{conPeriodo ? periodoTxt : tab === 'precios' ? 'Historial de variación de precios (últimos 3 meses)' : 'Estado actual del stock'} · Generado el {dmy(new Date())} {hm(new Date())} por {usuario.nombre_completo}</span>
       </div>
 
       <div className="report-bar">
@@ -174,11 +290,13 @@ export default function Reportes() {
 
       {tab === 'retiros' && (
         <>
-          <div className="stats stats--4">
+          <div className="stats stats--3">
             <StatCard icon={ArrowUpRight} tone="warning" label="Retiros" value={ret.lista.length} note={`${ret.porInsumo.length} insumos distintos`} />
-            <StatCard icon={Wallet} tone="neutral" label="Valor estimado" value={pesos(ret.valorTotal)} note="A costo promedio" />
+            <StatCard icon={Wallet} tone="neutral" label="Valor estimado" value={pesos(ret.valorTotal)} note="A costo promedio en el período" />
+            <StatCard icon={CalendarClock} tone="primary" label="Gasto semanal promedio" value={pesos(ret.gastoSemanal)} note={`Promedio diario: ${pesos(ret.gastoDiario)}`} />
+            <StatCard icon={Wallet} tone="primary" label="Gasto mensual promedio" value={pesos(ret.gastoMensual)} note="Proyección mensual (30 días)" />
             <StatCard icon={Users} tone="neutral" label="Personas que retiraron" value={ret.personas} note={persona ? nombre(Number(persona)) : 'En el período'} />
-            <StatCard icon={Package} tone="neutral" label="Insumo más retirado" value={masRetirado?.p?.nombre ?? '—'} note={masRetirado ? `${masRetirado.retiros} retiros` : 'Sin retiros'} />
+            <StatCard icon={Package} tone="neutral" label="Insumo más retirado" value={masRetirado?.p?.nombre ?? '—'} note={masRetirado ? `${masRetirado.retiros} retiros · ${pesos(masRetirado.valor)}` : 'Sin retiros'} />
           </div>
 
           <Seccion titulo="Retiros por trabajador" nota={periodoTxt}
@@ -231,7 +349,8 @@ export default function Reportes() {
             <StatCard icon={ShoppingCart} label="Compras" value={com.docs.length} note={`${com.porProv.length} ${com.porProv.length === 1 ? 'proveedor' : 'proveedores'}`} />
             <StatCard icon={Wallet} tone="neutral" label="Total comprado" value={pesos(com.total)} note="Cantidad × precio unitario" />
             <StatCard icon={Scale} tone="neutral" label="Compra promedio" value={pesos(com.docs.length ? com.total / com.docs.length : 0)} note="Por documento" />
-            <StatCard icon={Users} tone="neutral" label="Personas que compraron" value={com.trabajadores.length} note={persona ? nombre(Number(persona)) : 'En el período'} />
+            <StatCard icon={Truck} tone="primary" label="Proveedor principal" value={com.provPrincipal?.nombre ?? '—'}
+              note={com.provPrincipal ? `${com.pctProv}% del gasto (${pesos(com.provPrincipal.total)})` : 'Sin compras en el período'} />
           </div>
 
           <Seccion titulo="Compras por trabajador" nota={periodoTxt}
@@ -319,6 +438,138 @@ export default function Reportes() {
             tabla={{ columnas: ['Insumo', 'Veces contado', 'Sistema', 'Real', 'Diferencia', 'Valor'], filas: des.porProd.map((x) => [x.p?.nombre, x.veces, num(x.sis), num(x.real), signo(x.dif), pesos(x.valor)]) }}>
             <BarList items={des.porProd.slice(0, 8).map((x) => ({ key: x.id, label: x.p?.nombre ?? 'Insumo', texto: `${x.valor < 0 ? '−' : '+'}${pesos(Math.abs(x.valor))}`, valor: Math.abs(x.valor), detalle: `Diferencia ${signo(x.dif)} ${x.p?.unidad_medida ?? ''} (sistema ${num(x.sis)} · real ${num(x.real)})` }))} />
           </GraficoCard>
+        </>
+      )}
+
+      {tab === 'precios' && precios && (
+        <>
+          <div className="stats stats--4">
+            {precios.porCategoria.map((c) => (
+              <StatCard
+                key={c.categoria}
+                icon={TrendingUp}
+                tone={c.pct > 5 ? 'warning' : 'primary'}
+                label={`Variación en ${c.categoria}`}
+                value={fmtPct(c.pct)}
+                note={c.mayor ? `Últimos 3 meses · Mayor: ${c.mayor.producto?.nombre} (${fmtPct(c.mayor.pct)})` : 'Últimos 3 meses'}
+              />
+            ))}
+          </div>
+
+          <div ref={detallePrecioRef}>
+            {precios.seleccionado && (
+              <>
+                <GraficoCard
+                  titulo={`Evolución de precio: ${precios.seleccionado.producto.nombre} (${precios.seleccionado.producto.codigo})`}
+                  nota={`Precio unitario por ${precios.seleccionado.producto.unidad_medida} en cada compra registrada (${precios.seleccionado.compras} ${precios.seleccionado.compras === 1 ? 'compra' : 'compras'})`}
+                  accion={
+                    <LinkButton icon={Download} onClick={() => descargarCSV(`precios_${precios.seleccionado.producto.codigo}.csv`, [
+                      { titulo: 'Fecha', valor: (x) => dmy(x.fecha) },
+                      { titulo: 'Documento', valor: (x) => `${x.tipo} ${x.folio}` },
+                      { titulo: 'Proveedor', valor: (x) => x.proveedor },
+                      { titulo: 'Cantidad', valor: (x) => num(x.cantidad) },
+                      { titulo: 'Unidad', valor: () => precios.seleccionado.producto.unidad_medida },
+                      { titulo: 'Precio unitario', valor: (x) => x.precio },
+                      { titulo: 'Variación % vs anterior', valor: (x) => (x.diffPct == null ? '' : x.diffPct.toFixed(2).replace('.', ',')) },
+                    ], precios.seleccionado.puntos)}>
+                      Descargar historial
+                    </LinkButton>
+                  }
+                  vacio={precios.seleccionado.puntos.length === 0 && 'Este insumo aún no registra compras históricas.'}
+                  tabla={{
+                    columnas: ['Fecha', 'Documento', 'Proveedor', 'Cantidad', 'Precio unitario', 'Variación vs anterior'],
+                    filas: precios.seleccionado.puntos.map((x) => [
+                      dmy(x.fecha),
+                      `${x.tipo} N° ${x.folio}`,
+                      x.proveedor,
+                      `${num(x.cantidad)} ${precios.seleccionado.producto.unidad_medida}`,
+                      pesos(x.precio),
+                      x.diffPct == null ? '1ª compra' : `${fmtPct(x.diffPct)} (${x.diffPesos >= 0 ? '+' : '−'}${pesos(Math.abs(x.diffPesos))})`,
+                    ]),
+                  }}
+                >
+                  <div className="mini-stats mini-stats--4">
+                    <div>
+                      <span>Primer precio registrado</span>
+                      <b>{pesos(precios.seleccionado.primero)}</b>
+                      {precios.seleccionado.fechaPrimero && <small className="sub">{dmy(precios.seleccionado.fechaPrimero)}</small>}
+                    </div>
+                    <div>
+                      <span>Último precio pagado</span>
+                      <b>{pesos(precios.seleccionado.ultimo)}</b>
+                      {precios.seleccionado.fechaUltimo && <small className="sub">{dmy(precios.seleccionado.fechaUltimo)}</small>}
+                    </div>
+                    <div>
+                      <span>Variación acumulada</span>
+                      <b className={precios.seleccionado.pct > 0 ? 'diff--neg' : ''}>
+                        {fmtPct(precios.seleccionado.pct)} ({precios.seleccionado.diff >= 0 ? '+' : '−'}{pesos(Math.abs(precios.seleccionado.diff))})
+                      </b>
+                      <small className="sub">Entre primera y última compra</small>
+                    </div>
+                    <div>
+                      <span>Costo promedio actual</span>
+                      <b>{pesos(precios.seleccionado.producto.costo_promedio)} / {precios.seleccionado.producto.unidad_medida}</b>
+                      <small className="sub">{precios.seleccionado.compras} {precios.seleccionado.compras === 1 ? 'compra registrada' : 'compras registradas'}</small>
+                    </div>
+                  </div>
+                  <LineChart datos={precios.seleccionado.puntos} unidad={precios.seleccionado.producto.unidad_medida} />
+                </GraficoCard>
+
+                <Seccion
+                  titulo={`Compras históricas de ${precios.seleccionado.producto.nombre}`}
+                  nota="Comparación del precio unitario pagado en cada documento de compra."
+                >
+                  <Tabla
+                    columnas={[
+                      { t: 'Fecha', n: 1 },
+                      { t: 'Documento' },
+                      { t: 'Proveedor' },
+                      { t: 'Cantidad', r: 1 },
+                      { t: 'Precio unitario', r: 1 },
+                      { t: 'Variación vs compra anterior', r: 1 },
+                      { t: 'Subtotal línea', r: 1 },
+                    ]}
+                    vacio="Sin compras registradas para este insumo."
+                    filas={[...precios.seleccionado.puntos].reverse().map((x) => [
+                      dmy(x.fecha),
+                      `${x.tipo} N° ${x.folio}`,
+                      x.proveedor,
+                      `${num(x.cantidad)} ${precios.seleccionado.producto.unidad_medida}`,
+                      <b>{pesos(x.precio)}</b>,
+                      x.diffPct == null
+                        ? <span className="sub">Primera compra</span>
+                        : <b className={x.diffPct > 0 ? 'diff--neg' : ''}>{fmtPct(x.diffPct)} ({x.diffPesos >= 0 ? '+' : '−'}{pesos(Math.abs(x.diffPesos))})</b>,
+                      pesos(x.cantidad * x.precio),
+                    ])}
+                  />
+                </Seccion>
+              </>
+            )}
+          </div>
+
+          <section className="card consumo__lista report-card" aria-label="Productos">
+            <div>
+              <h2>Productos ({data.productos.length})</h2>
+              <p className="sub">Toca cualquier bloque para ver su gráfico de compras históricas y cómo ha variado su precio unitario.</p>
+            </div>
+            <ProductoPicker
+              productos={data.productos}
+              onSelect={elegirInsumoPrecio}
+              seleccionadoId={precios.seleccionado?.id}
+              renderDetalle={(p) => {
+                const info = precios.resumenProd.get(p.id)
+                if (!info) return <><b>{pesos(p.costo_promedio)}</b> / {p.unidad_medida}</>
+                return (
+                  <>
+                    <b>{pesos(info.ultimo)}</b> / {p.unidad_medida}
+                    <em className={info.pct > 0 ? 'pcard__var--up' : info.pct < 0 ? 'pcard__var--down' : ''}>
+                      {fmtPct(info.pct)}
+                    </em>
+                  </>
+                )
+              }}
+            />
+          </section>
         </>
       )}
     </>
