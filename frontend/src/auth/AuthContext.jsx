@@ -1,60 +1,71 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
-import { iniciarSesion, listar } from '../api/services'
-import { setToken } from '../api/client'
-import { cleanRut } from '../lib/rut'
+import { cerrarSesion, iniciarSesion, usuarioActual } from '../api/services'
+import { getToken, setToken } from '../api/client'
 
-const KEY = 'moncopulli.sesion'
 const AuthCtx = createContext(null)
 
-function leer() {
-  try { return JSON.parse(localStorage.getItem(KEY)) } catch { return null }
-}
-
 export function AuthProvider({ children }) {
-  const [usuario, setUsuario] = useState(leer)
+  const [usuario, setUsuario] = useState(null)
+  const [cargando, setCargando] = useState(() => !!getToken())
 
   const login = useCallback(async (rut, contrasena) => {
     const res = await iniciarSesion(rut, contrasena)
     if (res.token) setToken(res.token)
-    try { localStorage.setItem(KEY, JSON.stringify(res.usuario)) } catch {}
     setUsuario(res.usuario)
+    setCargando(false)
     return res.usuario
   }, [])
 
-  const logout = useCallback(() => {
-    setToken(null)
-    try { localStorage.removeItem(KEY) } catch {}
-    setUsuario(null)
+  const logout = useCallback(async () => {
+    try {
+      if (getToken()) await cerrarSesion()
+    } finally {
+      setToken(null)
+      setUsuario(null)
+      setCargando(false)
+    }
   }, [])
 
   const actualizarUsuario = useCallback((cambios) => {
-    setUsuario((u) => {
-      const nuevo = { ...u, ...cambios }
-      try { localStorage.setItem(KEY, JSON.stringify(nuevo)) } catch {}
-      return nuevo
-    })
+    setUsuario((u) => ({ ...u, ...cambios }))
   }, [])
 
-  // Sincroniza la sesión guardada en localStorage con los usuarios reales del backend de Django
   useEffect(() => {
-    if (!usuario) return
     let cancelado = false
-    listar('usuarios')
-      .then((usuarios) => {
-        if (cancelado) return
-        const real = usuarios.find((x) => cleanRut(x.rut) === cleanRut(usuario.rut ?? '') || x.id === usuario.id)
-        if (!real || !String(real.estado).toLowerCase().startsWith('activ')) {
-          logout()
-        } else if (JSON.stringify(real) !== JSON.stringify(usuario)) {
-          try { localStorage.setItem(KEY, JSON.stringify(real)) } catch {}
-          setUsuario(real)
-        }
-      })
-      .catch(() => {})
-    return () => { cancelado = true }
+    const validar = () => {
+      const token = getToken()
+      if (!token) {
+        if (!cancelado) setCargando(false)
+        return
+      }
+      usuarioActual()
+        .then((real) => { if (!cancelado && getToken() === token) setUsuario(real) })
+        .catch((error) => {
+          if (!cancelado && (error.status === 401 || error.status === 403) && getToken() === token) {
+            setToken(null)
+            setUsuario(null)
+          }
+        })
+        .finally(() => {
+          if (!cancelado) setCargando(false)
+        })
+    }
+    const expirada = () => {
+      setToken(null)
+      setUsuario(null)
+      setCargando(false)
+    }
+    validar()
+    window.addEventListener('moncopulli:session-expired', expirada)
+    window.addEventListener('online', validar)
+    return () => {
+      cancelado = true
+      window.removeEventListener('moncopulli:session-expired', expirada)
+      window.removeEventListener('online', validar)
+    }
   }, [])
 
-  const value = useMemo(() => ({ usuario, login, logout, actualizarUsuario }), [usuario, login, logout, actualizarUsuario])
+  const value = useMemo(() => ({ usuario, cargando, login, logout, actualizarUsuario }), [usuario, cargando, login, logout, actualizarUsuario])
   return <AuthCtx.Provider value={value}>{children}</AuthCtx.Provider>
 }
 

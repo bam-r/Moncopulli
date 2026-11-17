@@ -2,6 +2,7 @@ export const USE_MOCK = false
 const BASE = import.meta.env.VITE_API_URL || '/api'
 const TOKEN_KEY = 'moncopulli.token'
 
+try { localStorage.removeItem(TOKEN_KEY); localStorage.removeItem('moncopulli.sesion') } catch {}
 try { localStorage.removeItem('moncopulli.mock.v2') } catch {}
 
 export class NetworkError extends Error {
@@ -24,24 +25,28 @@ function mensajeDeError(status, data) {
   return `Error ${status}`
 }
 
-export const getToken = () => { try { return localStorage.getItem(TOKEN_KEY) } catch { return null } }
+export const getToken = () => { try { return sessionStorage.getItem(TOKEN_KEY) } catch { return null } }
 export const setToken = (t) => {
-  try { t ? localStorage.setItem(TOKEN_KEY, t) : localStorage.removeItem(TOKEN_KEY) } catch {}
+  try { t ? sessionStorage.setItem(TOKEN_KEY, t) : sessionStorage.removeItem(TOKEN_KEY) } catch {}
 }
 
 async function http(method, path, body) {
-  const token = getToken()
+  const token = path === '/auth/login/' ? null : getToken()
   let res
   try {
     res = await fetch(BASE + path, {
       method,
       headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
       body: body === undefined ? undefined : JSON.stringify(body),
+      cache: 'no-store',
     })
   } catch {
     throw new NetworkError()
   }
   if (!res.ok) {
+    if (res.status === 401 && token && getToken() === token) {
+      window.dispatchEvent(new Event('moncopulli:session-expired'))
+    }
     let data = null
     try { data = await res.json() } catch {}
     throw new ApiError(res.status, data)

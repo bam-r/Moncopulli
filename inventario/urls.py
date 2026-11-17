@@ -13,6 +13,13 @@ from .views import (
     DetalleInventarioViewSet,
     StockBodegaViewSet,
     login,
+    usuario_actual,
+    logout,
+    exportar_datos,
+    actualizar_perfil,
+    cambiar_contrasena,
+    preferencias_privacidad,
+    anonimizar_cuenta,
 )
 
 router = DefaultRouter()
@@ -30,5 +37,12 @@ router.register(r'stock-bodega', StockBodegaViewSet, basename='stock-bodega')
 
 urlpatterns = [
     path('auth/login/', login),
+    path('auth/me/', usuario_actual),
+    path('auth/logout/', logout),
+    path('user/data-export/', exportar_datos),
+    path('user/profile/', actualizar_perfil),
+    path('user/password/', cambiar_contrasena),
+    path('user/preferences/', preferencias_privacidad),
+    path('user/account/', anonimizar_cuenta),
     path('', include(router.urls)),
 ]

@@ -115,7 +115,7 @@ export function UsuarioModal({ usuario, onClose, onSaved }) {
     if (!f.departamento.trim()) n.departamento = 'Ingresa el departamento.'
     if (!f.telefono.trim()) n.telefono = 'Ingresa un teléfono.'
     if (!/^\S+@\S+\.\S+$/.test(f.email)) n.email = 'Correo inválido.'
-    if ((!usuario || f.contrasena) && f.contrasena.length < 6) n.contrasena = 'Mínimo 6 caracteres.'
+    if ((!usuario || f.contrasena) && f.contrasena.length < 10) n.contrasena = 'Mínimo 10 caracteres.'
     setErr(n)
     if (Object.keys(n).length) return
     enviar(async () => {
@@ -152,7 +152,7 @@ export function UsuarioModal({ usuario, onClose, onSaved }) {
           <Field label="Correo" error={err.email}>{(id) => <input id={id} className="input" type="email" maxLength={80} value={f.email} onChange={set('email')} />}</Field>
         </div>
         <div className="form__row form__row--3">
-          <Field label={usuario ? 'Nueva contraseña (opcional)' : 'Contraseña'} error={err.contrasena} hint={usuario ? 'Déjala vacía para conservar la contraseña actual.' : undefined}>{(id) => <input id={id} className="input" type="password" autoComplete="new-password" value={f.contrasena} onChange={set('contrasena')} />}</Field>
+          <Field label={usuario ? 'Nueva contraseña (opcional)' : 'Contraseña'} error={err.contrasena} hint={usuario ? 'Déjala vacía para conservar la contraseña actual.' : undefined}>{(id) => <input id={id} className="input" type="password" maxLength={1024} autoComplete="new-password" value={f.contrasena} onChange={set('contrasena')} />}</Field>
           <Field label="Rol">{(id) => <Select id={id} value={f.rol} onChange={set('rol')}><option value="TRABAJADOR">Trabajador</option><option value="ADMIN">Administrador</option></Select>}</Field>
           <Field label="Estado">{(id) => <Select id={id} value={f.estado} onChange={set('estado')}><option>Activo</option><option>Inactivo</option></Select>}</Field>
         </div>

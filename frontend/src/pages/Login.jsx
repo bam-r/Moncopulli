@@ -63,7 +63,7 @@ export default function Login() {
             <Field label="Contraseña" error={errores.clave}>
               {(id) => (
                 <span className="control">
-                  <input id={id} className="input input--pad-end" type={ver ? 'text' : 'password'} autoComplete="current-password"
+                  <input id={id} className="input input--pad-end" type={ver ? 'text' : 'password'} maxLength={1024} autoComplete="current-password"
                     placeholder="Ingresa tu contraseña" value={clave} onChange={(e) => setClave(e.target.value)} aria-invalid={!!errores.clave} />
                   <button type="button" className="control__btn" onClick={() => setVer(!ver)} aria-label={ver ? 'Ocultar contraseña' : 'Mostrar contraseña'}>
                     {ver ? <EyeOff size={18} strokeWidth={1.75} /> : <Eye size={18} strokeWidth={1.75} />}

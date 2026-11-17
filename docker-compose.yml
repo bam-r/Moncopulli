@@ -4,7 +4,7 @@ services:
     container_name: moncopulli_db
     environment:
       POSTGRES_USER: user
-      POSTGRES_PASSWORD: moratech
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-moratech}
       POSTGRES_DB: moncopulliBD
     ports:
       - "5432:5432"

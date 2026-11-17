@@ -7,7 +7,8 @@ const INTERVALO = 30000
 
 function leer(key) {
   try {
-    const data = JSON.parse(localStorage.getItem(key) || 'null')
+    const data = JSON.parse(sessionStorage.getItem(key) || localStorage.getItem(key) || 'null')
+    localStorage.removeItem(key)
     return {
       conocidos: Array.isArray(data?.conocidos) ? data.conocidos.map(String) : null,
       notificaciones: Array.isArray(data?.notificaciones) ? data.notificaciones : [],
@@ -18,9 +19,12 @@ function leer(key) {
 }
 
 function guardar(key, conocidos, notificaciones) {
-  try {
-    localStorage.setItem(key, JSON.stringify({ conocidos, notificaciones }))
-  } catch {}
+  try { sessionStorage.setItem(key, JSON.stringify({ conocidos, notificaciones })) } catch {}
+}
+
+export function limpiarNotificaciones(usuarioId) {
+  const key = `${STORAGE_PREFIX}${usuarioId}`
+  try { sessionStorage.removeItem(key); localStorage.removeItem(key) } catch {}
 }
 
 export function useNotificaciones(usuario) {

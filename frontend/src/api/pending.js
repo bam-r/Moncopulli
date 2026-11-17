@@ -15,3 +15,6 @@ export function agregarPendiente(consumo) {
 export function quitarPendiente(local) {
   escribir(leerPendientes().filter((c) => c._local !== local))
 }
+export function eliminarPendientesUsuario(usuarioId) {
+  escribir(leerPendientes().filter((c) => String(c.usuario) !== String(usuarioId)))
+}

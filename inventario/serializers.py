@@ -6,7 +6,7 @@ from django.utils import timezone
 from rest_framework import serializers
 
 from .models import (
-    Bodega, Consumo, DetalleDocumento, DetalleInventario, DocumentoCompra, Inventario,
+    ApiToken, Bodega, Consumo, DetalleDocumento, DetalleInventario, DocumentoCompra, Inventario,
     ProduccionLeche, Producto, Proveedor, StockBodega, Usuario,
 )
 from .servicios import es_admin, esta_activo, mover_stock, stock_en_bodega
@@ -34,14 +34,19 @@ class ProveedorSerializer(serializers.ModelSerializer):
 class UsuarioSerializer(serializers.ModelSerializer):
     class Meta:
         model = Usuario
-        fields = '__all__'
+        fields = (
+            "id", "rut", "nombre_completo", "puesto", "departamento", "telefono",
+            "email", "contrasena", "rol", "estado",
+        )
         extra_kwargs = {
-            'contrasena': {'write_only': True}
+            'contrasena': {'write_only': True, 'allow_null': False}
         }
 
     def validate_contrasena(self, valor):
-        if len(valor) < 6:
-            raise serializers.ValidationError("Mínimo 6 caracteres.")
+        if len(valor) < 10:
+            raise serializers.ValidationError("Mínimo 10 caracteres.")
+        if len(valor) > 1024:
+            raise serializers.ValidationError("Máximo 1024 caracteres.")
         return valor
 
     # La contraseña nunca se guarda en texto plano: se guarda su hash.
@@ -52,7 +57,12 @@ class UsuarioSerializer(serializers.ModelSerializer):
     def update(self, instance, validated_data):
         if "contrasena" in validated_data:
             validated_data["contrasena"] = make_password(validated_data["contrasena"])
-        return super().update(instance, validated_data)
+        resultado = super().update(instance, validated_data)
+        if "contrasena" in validated_data or not esta_activo(resultado):
+            ApiToken.objects.filter(usuario=resultado, revocado_en__isnull=True).update(
+                revocado_en=timezone.now()
+            )
+        return resultado
 
 
 class BodegaSerializer(serializers.ModelSerializer):
@@ -154,6 +164,7 @@ class DocumentoCompraSerializer(serializers.ModelSerializer):
     class Meta:
         model = DocumentoCompra
         fields = '__all__'
+        read_only_fields = ["usuario"]
         validators = []
 
     def validate(self, datos):
@@ -161,7 +172,7 @@ class DocumentoCompraSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError({"bodega": ["La bodega está inactiva."]})
         if not datos["proveedor"].estado:
             raise serializers.ValidationError({"proveedor": ["El proveedor está inactivo."]})
-        if not esta_activo(datos["usuario"]):
+        if not esta_activo(self.context["request"].user):
             raise serializers.ValidationError({"usuario": ["Usuario inactivo."]})
         repetido = DocumentoCompra.objects.filter(
             proveedor=datos["proveedor"], tipo_documento=datos["tipo_documento"], numero_folio=datos["numero_folio"]
@@ -193,6 +204,7 @@ class ProduccionLecheSerializer(serializers.ModelSerializer):
     class Meta:
         model = ProduccionLeche
         fields = '__all__'
+        read_only_fields = ["usuario"]
 
     def validate_litros(self, valor):
         if valor <= 0:
@@ -208,7 +220,7 @@ class ConsumoSerializer(serializers.ModelSerializer):
     class Meta:
         model = Consumo
         fields = '__all__'
-        read_only_fields = ['fecha']
+        read_only_fields = ['fecha', 'usuario', 'usuario_anula']
         extra_kwargs = {'estado': {'required': False}}
 
     def validate_cantidad_retirada(self, valor):
@@ -246,7 +258,8 @@ class ConsumoSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError({"estado": ["Un consumo solo se puede anular."]})
         if str(instance.estado).upper() == "ANULADO":
             raise serializers.ValidationError({"estado": ["Este consumo ya está anulado."]})
-        motivo, anula = exigir_anulador(validated_data, instance)
+        datos_anulacion = {**validated_data, "usuario_anula": self.context["request"].user}
+        motivo, anula = exigir_anulador(datos_anulacion, instance)
         instance.estado = "ANULADO"
         instance.motivo_anulacion = motivo
         instance.usuario_anula = anula
@@ -290,6 +303,7 @@ class InventarioSerializer(serializers.ModelSerializer):
     class Meta:
         model = Inventario
         fields = '__all__'
+        read_only_fields = ["usuario", "usuario_anula"]
         extra_kwargs = {'estado': {'required': False}}
 
     @transaction.atomic
@@ -309,7 +323,8 @@ class InventarioSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError({"estado": ["Un inventario solo se puede anular."]})
         if str(instance.estado).upper() == "ANULADO":
             raise serializers.ValidationError({"estado": ["Este inventario ya está anulado."]})
-        motivo, anula = exigir_anulador(validated_data, instance)
+        datos_anulacion = {**validated_data, "usuario_anula": self.context["request"].user}
+        motivo, anula = exigir_anulador(datos_anulacion, instance)
         instance.estado = "ANULADO"
         instance.motivo_anulacion = motivo
         instance.usuario_anula = anula

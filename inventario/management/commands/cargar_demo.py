@@ -8,8 +8,8 @@ consumos y producción de leche, y 2 inventarios. Usa las mismas reglas de stock
 que la API, así los totales por bodega quedan consistentes.
 
 Usuarios de ejemplo:
-    Administrador  11.111.111-1 / admin123
-    Trabajador     12.345.678-5 / trabajador123
+    Administrador  11.111.111-1 / admin123456
+    Trabajador     12.345.678-5 / trabajador123456
 """
 import random
 from datetime import date, datetime, time, timedelta
@@ -101,12 +101,12 @@ class Command(BaseCommand):
 
         admin = Usuario.objects.create(
             rut=con_dv(11111111), nombre_completo="Andrés Osorio", puesto="Administrador", departamento="Administración",
-            telefono="+56 9 1111 1111", email="admin@moncopulli.cl", contrasena=make_password("admin123"), rol="ADMIN", estado="Activo")
+            telefono="+56 9 1111 1111", email="admin@moncopulli.cl", contrasena=make_password("admin123456"), rol="ADMIN", estado="Activo")
         trabajadores = []
         for i, (cuerpo, nombre, puesto, depto) in enumerate(TRABAJADORES):
             trabajadores.append(Usuario.objects.create(
                 rut=con_dv(cuerpo), nombre_completo=nombre, puesto=puesto, departamento=depto, telefono=f"+56 9 {2000 + i} 0000",
-                email=f"{nombre.split()[0].lower()}@moncopulli.cl", contrasena=make_password("trabajador123"), rol="TRABAJADOR", estado="Activo"))
+                email=f"{nombre.split()[0].lower()}@moncopulli.cl", contrasena=make_password("trabajador123456"), rol="TRABAJADOR", estado="Activo"))
 
         bodegas = [Bodega.objects.create(nombre=n, ubicacion=u, estado=True) for n, u in BODEGAS]
         proveedores = [
@@ -210,4 +210,4 @@ class Command(BaseCommand):
 
         self.stdout.write(self.style.SUCCESS(
             f"Listo: {Producto.objects.count()} insumos, {Consumo.objects.count()} consumos, "
-            f"{DocumentoCompra.objects.count()} compras. Admin: 11.111.111-1 / admin123 · Trabajador: {con_dv(12345678)} / trabajador123"))
+            f"{DocumentoCompra.objects.count()} compras. Admin: 11.111.111-1 / admin123456 · Trabajador: {con_dv(12345678)} / trabajador123456"))

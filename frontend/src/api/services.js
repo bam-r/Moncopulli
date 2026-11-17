@@ -10,6 +10,15 @@ export const actualizar = (recurso, id, datos) => request('PATCH', `/${recurso}/
 
 // El login lo valida Django (compara contra la contraseña con hash).
 export const iniciarSesion = (rut, contrasena) => request('POST', '/auth/login/', { rut, contrasena })
+export const usuarioActual = () => request('GET', '/auth/me/')
+export const cerrarSesion = () => request('POST', '/auth/logout/')
+export const exportarDatos = () => request('GET', '/user/data-export/')
+export const actualizarPerfil = (datos) => request('PATCH', '/user/profile/', datos)
+export const cambiarContrasena = (datos) => request('PATCH', '/user/password/', datos)
+export const leerPreferencias = () => request('GET', '/user/preferences/')
+export const actualizarPreferencias = (datos) => request('PATCH', '/user/preferences/', datos)
+export const eliminarCuenta = (contrasena_actual) =>
+  request('DELETE', '/user/account/', { contrasena_actual })
 
 // Anular un consumo: Django pone la fecha, devuelve el stock a su bodega y exige un administrador.
 export async function anularConsumo(id, { motivo, usuario }) {
@@ -44,9 +53,9 @@ export async function registrarSalida({ producto, bodega, usuario, cantidad }) {
   }
 }
 
-export async function sincronizarPendientes() {
+export async function sincronizarPendientes(usuarioId) {
   let enviados = 0
-  for (const c of leerPendientes()) {
+  for (const c of leerPendientes().filter((item) => String(item.usuario) === String(usuarioId))) {
     const { _local, ...cuerpo } = c
     try {
       await crear('consumos', cuerpo)

@@ -49,9 +49,8 @@ function Sidebar({ admin }) {
 }
 
 // Barra de abajo en el celular: lo principal a un toque; el resto en "Más".
-function BarraInferior({ admin }) {
-  const { logout, usuario } = useAuth()
-  const navigate = useNavigate()
+function BarraInferior({ admin, onLogout }) {
+  const { usuario } = useAuth()
   const { pathname } = useLocation()
   const [mas, setMas] = useState(false)
   useEffect(() => setMas(false), [pathname])
@@ -81,7 +80,7 @@ function BarraInferior({ admin }) {
               </div>
             </div>
           ))}
-          <button type="button" className="btn btn--secondary btn--block btn--lg" onClick={() => { logout(); navigate('/login') }}>
+          <button type="button" className="btn btn--secondary btn--block btn--lg" onClick={onLogout}>
             <LogOut size={20} /> Cerrar sesión
           </button>
         </section>
@@ -100,9 +99,7 @@ function BarraInferior({ admin }) {
   )
 }
 
-function UserMenu({ usuario, admin }) {
-  const { logout } = useAuth()
-  const navigate = useNavigate()
+function UserMenu({ usuario, admin, onLogout }) {
   const [abierto, setAbierto] = useState(false)
   useEffect(() => {
     if (!abierto) return
@@ -120,7 +117,7 @@ function UserMenu({ usuario, admin }) {
       {abierto && (
         <div className="menu" role="menu">
           <div className="menu__who"><b>{usuario.nombre_completo}</b><span>{usuario.rut}</span></div>
-          <button type="button" role="menuitem" onClick={() => { logout(); navigate('/login') }}>
+          <button type="button" role="menuitem" onClick={onLogout}>
             <LogOut size={16} strokeWidth={1.75} /> Cerrar sesión
           </button>
         </div>
@@ -130,7 +127,7 @@ function UserMenu({ usuario, admin }) {
 }
 
 export default function AppLayout() {
-  const { usuario } = useAuth()
+  const { usuario, logout } = useAuth()
   const admin = esAdmin(usuario)
   const { pathname } = useLocation()
   const navigate = useNavigate()
@@ -140,11 +137,16 @@ export default function AppLayout() {
   const [notificacionesAbiertas, setNotificacionesAbiertas] = useState(false)
   const notificaciones = useNotificaciones(admin ? usuario : null)
   const seccion = titulos(admin)[pathname] ?? ''
+  const salir = async () => {
+    try { await logout() }
+    catch { toast('La sesión local se cerró, pero no se pudo revocar en el servidor.') }
+    navigate('/login', { replace: true })
+  }
 
   useEffect(() => {
     if (!online || !pendientes.length) return
-    sincronizarPendientes().then((n) => n && toast(`${n} ${n === 1 ? 'retiro sincronizado' : 'retiros sincronizados'}`))
-  }, [online, pendientes.length === 0])
+    sincronizarPendientes(usuario.id).then((n) => n && toast(`${n} ${n === 1 ? 'retiro sincronizado' : 'retiros sincronizados'}`))
+  }, [online, pendientes.length === 0, usuario.id])
 
   return (
     <div className={`app ${admin ? '' : 'app--worker'}`}>
@@ -200,7 +202,7 @@ export default function AppLayout() {
               </div>
             )}
             <span className="vr" />
-            <UserMenu usuario={usuario} admin={admin} />
+            <UserMenu usuario={usuario} admin={admin} onLogout={salir} />
           </div>
         </header>
         {(!online || pendientes.length > 0) && (
@@ -212,7 +214,7 @@ export default function AppLayout() {
         )}
         <main className="content"><Outlet /></main>
       </div>
-      <BarraInferior admin={admin} />
+      <BarraInferior admin={admin} onLogout={salir} />
     </div>
   )
 }
