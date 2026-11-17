@@ -11,6 +11,9 @@ https://docs.djangoproject.com/en/6.1/ref/settings/
 """
 
 from pathlib import Path
+import os
+
+from django.core.exceptions import ImproperlyConfigured
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -20,12 +23,14 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # See https://docs.djangoproject.com/en/6.1/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure-2=gx#^^b)o(r)!1jtg5!vpqa_ea-t!p8xkla7z=kzp5=y657rn'
+DEBUG = os.environ.get("DJANGO_DEBUG", "true").lower() == "true"
+SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY")
+if not SECRET_KEY:
+    if not DEBUG:
+        raise ImproperlyConfigured("Define DJANGO_SECRET_KEY antes de iniciar el servidor.")
+    SECRET_KEY = "solo-desarrollo-no-usar-en-produccion"
 
-# SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
-
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = [host.strip() for host in os.environ.get("DJANGO_ALLOWED_HOSTS", "localhost,127.0.0.1").split(",") if host.strip()]
 
 
 # Application definition
@@ -44,7 +49,6 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     'corsheaders.middleware.CorsMiddleware',
-    'django.middleware.common.CommonMiddleware',
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
@@ -79,12 +83,12 @@ WSGI_APPLICATION = 'config.wsgi.application'
 
 DATABASES = {
     'default': {
-        'ENGINE': 'django.db.backends.postgresql',
-        'NAME': 'moncopulliBD',
-        'USER': 'user',
-        'PASSWORD': 'moratech',
-        'HOST': 'localhost',
-        'PORT': '5432',
+        'ENGINE': os.environ.get("DB_ENGINE", "django.db.backends.postgresql"),
+        'NAME': os.environ.get("DB_NAME", "moncopulliBD"),
+        'USER': os.environ.get("DB_USER", "user"),
+        'PASSWORD': os.environ.get("DB_PASSWORD", "moratech" if DEBUG else ""),
+        'HOST': os.environ.get("DB_HOST", "localhost"),
+        'PORT': os.environ.get("DB_PORT", "5432"),
     }
 }
 
@@ -107,6 +111,12 @@ AUTH_PASSWORD_VALIDATORS = [
     },
 ]
 
+PASSWORD_HASHERS = [
+    "django.contrib.auth.hashers.BCryptSHA256PasswordHasher",
+    "django.contrib.auth.hashers.PBKDF2PasswordHasher",
+    "django.contrib.auth.hashers.PBKDF2SHA1PasswordHasher",
+]
+
 
 # Internationalization
 # https://docs.djangoproject.com/en/6.1/topics/i18n/
@@ -127,20 +137,62 @@ STATIC_URL = 'static/'
 
 
 # Email
-# https://docs.djangoproject.com/en/6.1/topics/email/#topic-email-configuration
+MAIL_BACKEND = os.environ.get(
+    "DJANGO_MAIL_BACKEND",
+    "django.core.mail.backends.console.EmailBackend"
+    if DEBUG
+    else "django.core.mail.backends.smtp.EmailBackend",
+)
+MAIL_OPTIONS = {}
+if MAIL_BACKEND == "django.core.mail.backends.smtp.EmailBackend":
+    SMTP_HOST = os.environ.get("SMTP_HOST", "")
+    if not DEBUG and not SMTP_HOST:
+        raise ImproperlyConfigured("Define SMTP_HOST para el correo de producción.")
+    MAIL_OPTIONS = {
+        "host": SMTP_HOST or "localhost",
+        "port": int(os.environ.get("SMTP_PORT", "587")),
+        "username": os.environ.get("SMTP_USER", ""),
+        "password": os.environ.get("SMTP_PASSWORD", ""),
+        "use_tls": os.environ.get("SMTP_USE_TLS", "true").lower() == "true",
+        "use_ssl": os.environ.get("SMTP_USE_SSL", "false").lower() == "true",
+        "timeout": int(os.environ.get("SMTP_TIMEOUT", "10")),
+    }
 
 MAILERS = {
-    'default': {
-        'BACKEND': 'django.core.mail.backends.console.EmailBackend',
+    "default": {
+        "BACKEND": MAIL_BACKEND,
+        "OPTIONS": MAIL_OPTIONS,
     },
 }
 
 CORS_ALLOWED_ORIGINS = [
-    "http://localhost:5173",
-    "http://127.0.0.1:5173",
+    origin.strip()
+    for origin in os.environ.get(
+        "CORS_ALLOWED_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173"
+    ).split(",")
+    if origin.strip()
+]
+CSRF_TRUSTED_ORIGINS = [
+    origin.strip()
+    for origin in os.environ.get("CSRF_TRUSTED_ORIGINS", "").split(",")
+    if origin.strip()
 ]
 
+SECURE_SSL_REDIRECT = os.environ.get("DJANGO_SECURE_SSL_REDIRECT", str(not DEBUG)).lower() == "true"
+SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https") if os.environ.get("DJANGO_TRUST_PROXY", "false").lower() == "true" else None
+SESSION_COOKIE_SECURE = not DEBUG
+CSRF_COOKIE_SECURE = not DEBUG
+SECURE_CONTENT_TYPE_NOSNIFF = True
+SECURE_REFERRER_POLICY = "same-origin"
+X_FRAME_OPTIONS = "DENY"
+if not DEBUG:
+    SECURE_HSTS_SECONDS = int(os.environ.get("DJANGO_SECURE_HSTS_SECONDS", "0"))
+    SECURE_HSTS_INCLUDE_SUBDOMAINS = SECURE_HSTS_SECONDS > 0
+
 REST_FRAMEWORK = {
-    # Limita los intentos de login por IP (la seguridad completa se ve después).
+    'DEFAULT_AUTHENTICATION_CLASSES': ['inventario.authentication.ApiTokenAuthentication'],
+    'DEFAULT_PERMISSION_CLASSES': ['inventario.permissions.UsuarioActivo'],
     'DEFAULT_THROTTLE_RATES': {'login': '30/min'},
 }
+
+CONSENT_POLICY_VERSION = os.environ.get("CONSENT_POLICY_VERSION", "1")

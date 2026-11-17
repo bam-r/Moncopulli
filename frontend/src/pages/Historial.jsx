@@ -7,7 +7,8 @@ import { AnularConsumoModal } from '../components/modals-extra'
 import { esAdmin, esAnulado, hm, dmy, num, parseDate, pesos } from '../lib/format'
 import { documentosConTotal, enRango, rangoUltimos, sinTildes } from '../lib/analisis'
 
-const RECURSOS = ['consumos', 'productos', 'usuarios', 'bodegas', 'proveedores', 'documentos-compra', 'detalle-documentos', 'inventarios', 'detalle-inventarios']
+const RECURSOS_ADMIN = ['consumos', 'productos', 'usuarios', 'bodegas', 'proveedores', 'documentos-compra', 'detalle-documentos', 'inventarios', 'detalle-inventarios']
+const RECURSOS_TRABAJADOR = ['consumos', 'productos', 'bodegas']
 const PERIODOS = { 7: 'Última semana', 30: 'Último mes', 90: 'Últimos 3 meses', todo: 'Todo' }
 const TIPOS = { todos: 'Todo', salida: 'Retiros', entrada: 'Compras', inventario: 'Inventarios' }
 const POR_PAGINA = 40
@@ -15,7 +16,7 @@ const POR_PAGINA = 40
 export default function Historial() {
   const { usuario } = useAuth()
   const admin = esAdmin(usuario)
-  const { data, loading, error, reload } = useRecursos(RECURSOS)
+  const { data, loading, error, reload } = useRecursos(admin ? RECURSOS_ADMIN : RECURSOS_TRABAJADOR)
   const [periodo, setPeriodo] = useState('30')
   const [tipo, setTipo] = useState('todos')
   const [persona, setPersona] = useState('')
@@ -24,23 +25,24 @@ export default function Historial() {
   const [anular, setAnular] = useState(null)
 
   const movs = useMemo(() => {
-    if (!data.consumos) return []
+    if (!data.consumos || !data.productos || !data.bodegas) return []
     const prod = new Map(data.productos.map((p) => [p.id, p]))
-    const usu = new Map(data.usuarios.map((u) => [u.id, u]))
+    const usu = new Map((data.usuarios ?? []).map((u) => [u.id, u]))
     const bod = new Map(data.bodegas.map((b) => [b.id, b]))
-    const prov = new Map(data.proveedores.map((p) => [p.id, p]))
+    const prov = new Map((data.proveedores ?? []).map((p) => [p.id, p]))
     const salidas = data.consumos.map((c) => {
       const p = prod.get(c.producto)
+      const nombrePersona = usu.get(c.usuario)?.nombre_completo ?? (c.usuario === usuario.id ? usuario.nombre_completo : 'Usuario')
       return {
         key: `c${c.id}`, tipo: 'salida', fecha: parseDate(c.fecha), conHora: true, usuarioId: c.usuario,
-        persona: usu.get(c.usuario)?.nombre_completo ?? 'Usuario', titulo: p?.nombre ?? 'Insumo',
+        persona: nombrePersona, titulo: p?.nombre ?? 'Insumo',
         detalle: `${bod.get(c.bodega)?.nombre ?? 'Bodega'}`, cantidad: `${num(c.cantidad_retirada)} ${p?.unidad_medida ?? ''}`,
         anulado: esAnulado(c), motivo: c.motivo_anulacion, consumo: c,
         texto: `${p?.nombre} ${p?.codigo}`,
       }
     })
     if (!admin) return salidas.filter((m) => m.usuarioId === usuario.id).sort((a, b) => b.fecha - a.fecha)
-    const compras = documentosConTotal(data['documentos-compra'], data['detalle-documentos']).map((d) => ({
+    const compras = documentosConTotal(data['documentos-compra'] ?? [], data['detalle-documentos'] ?? []).map((d) => ({
       key: `d${d.id}`, tipo: 'entrada', fecha: d.fecha, conHora: false, usuarioId: d.usuario,
       persona: usu.get(d.usuario)?.nombre_completo ?? 'Usuario',
       titulo: `${d.tipo_documento} N° ${d.numero_folio} · ${prov.get(d.proveedor)?.nombre ?? 'Proveedor'}`,
@@ -48,8 +50,8 @@ export default function Historial() {
       cantidad: pesos(d.total), anulado: false,
       texto: `${prov.get(d.proveedor)?.nombre} ${d.numero_folio} ${d.lineas.map((l) => prod.get(l.producto)?.nombre).join(' ')}`,
     }))
-    const inventarios = data.inventarios.map((i) => {
-      const det = data['detalle-inventarios'].filter((d) => d.inventario === i.id)
+    const inventarios = (data.inventarios ?? []).map((i) => {
+      const det = (data['detalle-inventarios'] ?? []).filter((d) => d.inventario === i.id)
       const sis = det.reduce((s, d) => s + Number(d.stock_sistema), 0)
       const real = det.reduce((s, d) => s + Number(d.stock_real), 0)
       return {
@@ -60,7 +62,7 @@ export default function Historial() {
       }
     })
     return [...salidas, ...compras, ...inventarios].sort((a, b) => b.fecha - a.fecha)
-  }, [data, admin, usuario.id])
+  }, [data, admin, usuario.id, usuario.nombre_completo])
 
   const filtrados = useMemo(() => {
     const r = periodo === 'todo' ? null : rangoUltimos(Number(periodo))
@@ -95,7 +97,7 @@ export default function Historial() {
               <Select aria-label="Tipo de movimiento" value={tipo} onChange={reset(setTipo)}>{Object.entries(TIPOS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</Select>
               <Select aria-label="Persona" value={persona} onChange={reset(setPersona)}>
                 <option value="">Todas las personas</option>
-                {data.usuarios.map((u) => <option key={u.id} value={u.id}>{u.nombre_completo}</option>)}
+                {(data.usuarios ?? []).map((u) => <option key={u.id} value={u.id}>{u.nombre_completo}</option>)}
               </Select>
             </>
           )}

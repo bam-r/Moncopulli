@@ -1,4 +1,7 @@
+from datetime import timedelta
+
 from django.db import models
+from django.utils import timezone
 
 
 class Proveedor(models.Model):
@@ -20,18 +23,113 @@ class Proveedor(models.Model):
 
 
 class Usuario(models.Model):
-    rut = models.CharField(max_length=12, unique=True)
+    rut = models.CharField(max_length=50, unique=True)
     nombre_completo = models.CharField(max_length=100)
     puesto = models.CharField(max_length=50)
     departamento = models.CharField(max_length=50)
     telefono = models.CharField(max_length=15)
     email = models.CharField(max_length=80)
-    contrasena = models.CharField(max_length=255)
+    contrasena = models.CharField(max_length=255, null=True, blank=True)
     rol = models.CharField(max_length=20)
     estado = models.CharField(max_length=10)
 
+    @property
+    def is_authenticated(self):
+        return True
+
     def __str__(self):
         return f"{self.nombre_completo} ({self.rut})"
+
+
+class ApiToken(models.Model):
+    usuario = models.ForeignKey(Usuario, on_delete=models.CASCADE, related_name="api_tokens")
+    digest = models.CharField(max_length=64, unique=True)
+    creado_en = models.DateTimeField(auto_now_add=True)
+    expira_en = models.DateTimeField()
+    revocado_en = models.DateTimeField(null=True, blank=True)
+
+    @classmethod
+    def crear(cls, usuario, secreto):
+        import hashlib
+
+        return cls.objects.create(
+            usuario=usuario,
+            digest=hashlib.sha256(secreto.encode("utf-8")).hexdigest(),
+            expira_en=timezone.now() + timedelta(hours=12),
+        )
+
+
+class PreferenciasPrivacidad(models.Model):
+    usuario = models.OneToOneField(Usuario, on_delete=models.CASCADE, related_name="preferencias_privacidad")
+    marketing = models.BooleanField(default=False)
+    perfilamiento = models.BooleanField(default=False)
+    actualizada_en = models.DateTimeField(auto_now=True)
+
+
+class RegistroConsentimientoQuerySet(models.QuerySet):
+    def update(self, **kwargs):
+        raise TypeError("Los registros de consentimiento son inmutables.")
+
+    def delete(self):
+        raise TypeError("Los registros de consentimiento son inmutables.")
+
+
+class RegistroConsentimiento(models.Model):
+    FINALIDADES = [
+        ("marketing", "Marketing"),
+        ("perfilamiento", "Perfilamiento"),
+    ]
+    ESTADOS = [
+        ("otorgado", "Otorgado"),
+        ("revocado", "Revocado"),
+    ]
+
+    usuario = models.ForeignKey(
+        Usuario, on_delete=models.SET_NULL, null=True, blank=True, related_name="consentimientos"
+    )
+    finalidad = models.CharField(max_length=20, choices=FINALIDADES)
+    version_politica = models.CharField(max_length=30)
+    fecha_hora_utc = models.DateTimeField(auto_now_add=True)
+    ip_origen = models.GenericIPAddressField(null=True, blank=True)
+    estado = models.CharField(max_length=10, choices=ESTADOS)
+
+    objects = RegistroConsentimientoQuerySet.as_manager()
+
+    def save(self, *args, **kwargs):
+        if self.pk:
+            raise TypeError("Los registros de consentimiento son inmutables.")
+        return super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise TypeError("Los registros de consentimiento son inmutables.")
+
+
+class RegistroAccesoDatosQuerySet(models.QuerySet):
+    def update(self, **kwargs):
+        raise TypeError("Los registros de acceso son inmutables.")
+
+    def delete(self):
+        raise TypeError("Los registros de acceso son inmutables.")
+
+
+class RegistroAccesoDatos(models.Model):
+    usuario = models.ForeignKey(Usuario, on_delete=models.SET_NULL, null=True, blank=True)
+    usuario_objetivo = models.ForeignKey(
+        Usuario, on_delete=models.SET_NULL, null=True, blank=True, related_name="accesos_a_datos"
+    )
+    accion = models.CharField(max_length=30)
+    fecha_hora_utc = models.DateTimeField(auto_now_add=True)
+    ip_origen = models.GenericIPAddressField(null=True, blank=True)
+
+    objects = RegistroAccesoDatosQuerySet.as_manager()
+
+    def save(self, *args, **kwargs):
+        if self.pk:
+            raise TypeError("Los registros de acceso son inmutables.")
+        return super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise TypeError("Los registros de acceso son inmutables.")
 
 
 class Bodega(models.Model):

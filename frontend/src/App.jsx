@@ -19,7 +19,8 @@ import { inicioPara } from './components/nav'
 import { esAdmin } from './lib/format'
 
 function Protegida({ soloAdmin, children }) {
-  const { usuario } = useAuth()
+  const { usuario, cargando } = useAuth()
+  if (cargando) return null
   if (!usuario) return <Navigate to="/login" replace />
   if (soloAdmin && !esAdmin(usuario)) return <Navigate to="/consumo" replace />
   return children
