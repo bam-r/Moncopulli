@@ -2,16 +2,69 @@ import { request, NetworkError } from './client'
 import { agregarPendiente, leerPendientes, quitarPendiente, EVENTO_DATOS } from './pending'
 
 const comoLista = (d) => (Array.isArray(d) ? d : d?.results ?? [])
+const CACHE_KEY = 'moncopulli.cache.v1.'
+const cacheMemoria = new Map()
 
-export const listar = (recurso) => request('GET', `/${recurso}/`).then(comoLista)
+function guardarCache(recurso, lista) {
+  cacheMemoria.set(recurso, lista)
+  try { sessionStorage.setItem(CACHE_KEY + recurso, JSON.stringify(lista)) } catch {}
+}
+
+export function leerCache(recurso) {
+  if (cacheMemoria.has(recurso)) return cacheMemoria.get(recurso)
+  try {
+    const guardado = sessionStorage.getItem(CACHE_KEY + recurso)
+    if (guardado) {
+      const lista = JSON.parse(guardado)
+      cacheMemoria.set(recurso, lista)
+      return lista
+    }
+  } catch {}
+  return undefined
+}
+
+export function limpiarCache() {
+  cacheMemoria.clear()
+  try {
+    Object.keys(sessionStorage).forEach((k) => {
+      if (k.startsWith(CACHE_KEY)) sessionStorage.removeItem(k)
+    })
+  } catch {}
+}
+
+export const listar = async (recurso) => {
+  if (!navigator.onLine) {
+    const enCache = leerCache(recurso)
+    if (enCache !== undefined) return enCache
+    if (recurso === 'consumos' && leerCache('productos') !== undefined) return []
+  }
+  try {
+    const lista = comoLista(await request('GET', `/${recurso}/`))
+    guardarCache(recurso, lista)
+    return lista
+  } catch (e) {
+    if (e instanceof NetworkError) {
+      const enCache = leerCache(recurso)
+      if (enCache !== undefined) return enCache
+      if (recurso === 'consumos' && leerCache('productos') !== undefined) return []
+    }
+    throw e
+  }
+}
 export const obtener = (recurso, id) => request('GET', `/${recurso}/${id}/`)
 export const crear = (recurso, datos) => request('POST', `/${recurso}/`, datos)
 export const actualizar = (recurso, id, datos) => request('PATCH', `/${recurso}/${id}/`, datos)
 
 // El login lo valida Django (compara contra la contraseña con hash).
-export const iniciarSesion = (rut, contrasena) => request('POST', '/auth/login/', { rut, contrasena })
+export const iniciarSesion = (rut, contrasena) => {
+  limpiarCache()
+  return request('POST', '/auth/login/', { rut, contrasena })
+}
 export const usuarioActual = () => request('GET', '/auth/me/')
-export const cerrarSesion = () => request('POST', '/auth/logout/')
+export const cerrarSesion = () => {
+  limpiarCache()
+  return request('POST', '/auth/logout/')
+}
 export const exportarDatos = () => request('GET', '/user/data-export/')
 export const actualizarPerfil = (datos) => request('PATCH', '/user/profile/', datos)
 export const cambiarContrasena = (datos) => request('PATCH', '/user/password/', datos)

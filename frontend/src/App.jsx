@@ -15,6 +15,7 @@ import RegistrarCompra from './pages/RegistrarCompra'
 import Historial from './pages/Historial'
 import Bodegas from './pages/Bodegas'
 import Leche from './pages/Leche'
+import MiInformacion from './pages/MiInformacion'
 import { inicioPara } from './components/nav'
 import { esAdmin } from './lib/format'
 
@@ -46,6 +47,7 @@ export default function App() {
         <Route path="/proveedores" element={<Protegida soloAdmin><Proveedores /></Protegida>} />
         <Route path="/configuracion" element={<Configuracion />} />
         <Route path="/ayuda" element={<Ayuda />} />
+        <Route path="/mi-informacion" element={<MiInformacion />} />
       </Route>
       <Route path="*" element={<Navigate to={inicio} replace />} />
     </Routes>
