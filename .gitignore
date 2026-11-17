@@ -14,7 +14,7 @@ dist/
 downloads/
 eggs/
 .eggs/
-lib/
+/lib/
 lib64/
 parts/
 sdist/
@@ -219,11 +219,9 @@ __marimo__/
 # Streamlit
 .streamlit/secrets.toml
 
-# Dependencias de Node / React
 node_modules/
 frontend/node_modules/
 
-# Entorno virtual de Python y archivos temporales
 venv/
 .venv/
 __pycache__/
