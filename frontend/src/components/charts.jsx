@@ -1,11 +1,11 @@
 import { useState } from 'react'
-import { dmy, miles } from '../lib/format'
+import { dmy, miles, pesos } from '../lib/format'
 
 function useTip() {
   const [tip, setTip] = useState(null)
   const show = (e, contenido) => {
     const r = e.currentTarget.getBoundingClientRect()
-    setTip({ x: Math.min(Math.max(r.left + r.width / 2, 90), window.innerWidth - 90), y: r.top, contenido })
+    setTip({ x: Math.min(Math.max(r.left + r.width / 2, 110), window.innerWidth - 110), y: r.top, contenido })
   }
   const hide = () => setTip(null)
   const el = tip && <div className="tip" style={{ left: tip.x, top: tip.y }} role="tooltip">{tip.contenido}</div>
@@ -23,10 +23,25 @@ function escala(max) {
   return { paso: pow * 10, tope: pow * 10 }
 }
 
-export function GraficoCard({ titulo, nota, accion, tabla, children, vacio }) {
+function escalaRango(minVal, maxVal) {
+  if (minVal === maxVal) {
+    const margen = Math.max(10, Math.round(maxVal * 0.1))
+    return { base: Math.max(0, minVal - margen), tope: maxVal + margen, paso: margen / 2 }
+  }
+  const span = maxVal - minVal
+  const pad = Math.max(span * 0.2, maxVal * 0.03, 1)
+  const rawMin = Math.max(0, minVal - pad)
+  const rawMax = maxVal + pad
+  const { paso } = escala(rawMax - rawMin)
+  const base = Math.max(0, Math.floor(rawMin / paso) * paso)
+  const tope = Math.max(base + paso, Math.ceil(rawMax / paso) * paso)
+  return { base, tope, paso }
+}
+
+export function GraficoCard({ titulo, nota, accion, tabla, children, vacio, id }) {
   const [verTabla, setVerTabla] = useState(false)
   return (
-    <section className="card chart-card">
+    <section id={id} className="card chart-card">
       <header className="chart-card__head">
         <div>
           <h2>{titulo}</h2>
@@ -77,6 +92,7 @@ export function BarList({ items }) {
 }
 
 const fmt = (v) => (Number.isInteger(v) ? miles(v) : (Math.round(v * 100) / 100).toLocaleString('es-CL'))
+const diaMes = (d) => `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}`
 
 export function ColumnChart({ datos, unidad, fechaTexto = dmy, semanal = false }) {
   const { show, hide, el } = useTip()
@@ -85,7 +101,6 @@ export function ColumnChart({ datos, unidad, fechaTexto = dmy, semanal = false }
   const ticks = []
   for (let t = 0; t <= tope; t += paso) ticks.push(t)
   const cadaN = Math.max(1, Math.ceil(datos.length / 7))
-  const diaMes = (d) => `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}`
   const contenido = (d) => <><b>{fmt(d.valor)} {unidad}</b><span>{semanal ? 'Semana del ' : ''}{fechaTexto(d.fecha)}</span></>
   return (
     <div className="cols" role="img" aria-label={`Gráfico de columnas por día, máximo ${fmt(max)} ${unidad}. Los datos están disponibles con "Ver tabla".`}>
@@ -104,6 +119,76 @@ export function ColumnChart({ datos, unidad, fechaTexto = dmy, semanal = false }
       </div>
       <div className="cols__x">
         {datos.map((d, i) => <span key={d.fecha.getTime()}>{i % cadaN === 0 ? diaMes(d.fecha) : ''}</span>)}
+      </div>
+      {el}
+    </div>
+  )
+}
+
+export function LineChart({ datos, unidad = '' }) {
+  const { show, hide, el } = useTip()
+  if (!datos?.length) return null
+  const valores = datos.map((d) => d.valor)
+  const { base, tope, paso } = escalaRango(Math.min(...valores), Math.max(...valores))
+  const rango = Math.max(tope - base, 1)
+  const ticks = []
+  for (let t = base; t <= tope + paso * 0.01; t += paso) ticks.push(Math.round(t))
+
+  const xPct = (i) => (datos.length === 1 ? 50 : 6 + (i / (datos.length - 1)) * 88)
+  const yPct = (v) => ((v - base) / rango) * 100
+  const puntosSvg = datos.map((d, i) => `${(xPct(i) * 6).toFixed(1)},${(220 - yPct(d.valor) * 2.2).toFixed(1)}`).join(' ')
+  const areaSvg = datos.length > 1
+    ? `${(xPct(0) * 6).toFixed(1)},220 ${puntosSvg} ${(xPct(datos.length - 1) * 6).toFixed(1)},220`
+    : ''
+
+  const cadaN = Math.max(1, Math.ceil(datos.length / 8))
+  const contenido = (d) => (
+    <>
+      <b>{pesos(d.valor)}{unidad ? ` / ${unidad}` : ''}</b>
+      {d.diffPct != null && (
+        <span>
+          {d.diffPct > 0 ? '+' : ''}{d.diffPct.toFixed(1).replace('.', ',')}% ({d.diffPesos >= 0 ? '+' : '−'}{pesos(Math.abs(d.diffPesos))}) vs anterior
+        </span>
+      )}
+      {d.detalle && <span>{d.detalle}</span>}
+      <span>{dmy(d.fecha)}</span>
+    </>
+  )
+
+  return (
+    <div className="cols line-chart" role="img" aria-label="Gráfico de línea de evolución de precio unitario en cada compra.">
+      <div className="cols__plot">
+        {ticks.map((t) => (
+          <div key={t} className="cols__tick" style={{ bottom: `${((t - base) / rango) * 100}%` }}>
+            <span>${fmt(t)}</span>
+          </div>
+        ))}
+        <svg className="line-chart__svg" viewBox="0 0 600 220" preserveAspectRatio="none" aria-hidden="true">
+          {areaSvg && <polygon className="line-chart__area" points={areaSvg} />}
+          {datos.length > 1 && <polyline className="line-chart__line" points={puntosSvg} />}
+        </svg>
+        {datos.map((d, i) => (
+          <button
+            type="button"
+            key={d.key ?? i}
+            className={`line-chart__point ${d.diffPct > 0 ? 'line-chart__point--up' : d.diffPct < 0 ? 'line-chart__point--down' : ''}`}
+            style={{ left: `${xPct(i)}%`, bottom: `${yPct(d.valor)}%` }}
+            aria-label={`Compra del ${dmy(d.fecha)}: ${pesos(d.valor)}`}
+            onPointerEnter={(e) => show(e, contenido(d))}
+            onPointerLeave={hide}
+            onFocus={(e) => show(e, contenido(d))}
+            onBlur={hide}
+          >
+            <span className="line-chart__val">{pesos(d.valor)}</span>
+          </button>
+        ))}
+      </div>
+      <div className="cols__x line-chart__x">
+        {datos.map((d, i) => (
+          <span key={d.key ?? i} style={{ left: `${xPct(i)}%` }}>
+            {i % cadaN === 0 || i === datos.length - 1 ? diaMes(d.fecha) : ''}
+          </span>
+        ))}
       </div>
       {el}
     </div>

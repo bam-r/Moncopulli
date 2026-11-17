@@ -192,7 +192,7 @@ button:disabled{cursor:not-allowed;opacity:.55}
   .topbar__menu,.topbar__brand{display:flex}
   .topbar .crumbs{display:none}
   .topbar__right{gap:var(--space-2)}
-  .app:not(.app--worker) .topbar__date,.app:not(.app--worker) .vr,.app:not(.app--worker) .user__name,.app:not(.app--worker) .user__btn svg:last-child{display:none}
+  .topbar__date,.vr,.user__name,.user__btn svg:last-child{display:none}
   .content{padding:var(--space-6) var(--space-5)}
   .crumbs--page{display:flex}
   .page-head{flex-direction:column;gap:var(--space-4)}

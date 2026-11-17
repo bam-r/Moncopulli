@@ -4,11 +4,20 @@ import { estadoStock } from '../lib/stock'
 import { sinTildes } from '../lib/analisis'
 import { num } from '../lib/format'
 
-const POR_PAGINA = 24
+const POR_PAGINA = 48
 
 // Buscador de insumos para cuando hay muchos: texto + categorías + "mis frecuentes".
-// Sirve igual para el retiro (consumo) y para la compra.
-export default function ProductoPicker({ productos, onSelect, seleccionadoId, frecuentes = [], stockDe, sinStockBloquea = false, autoFocus = false }) {
+// Sirve igual para el retiro (consumo), para la compra y para ver la variación de precio en reportes.
+export default function ProductoPicker({
+  productos,
+  onSelect,
+  seleccionadoId,
+  frecuentes = [],
+  stockDe,
+  sinStockBloquea = false,
+  autoFocus = false,
+  renderDetalle,
+}) {
   const [q, setQ] = useState('')
   const [cat, setCat] = useState('')
   const [pagina, setPagina] = useState(1)
@@ -64,7 +73,7 @@ export default function ProductoPicker({ productos, onSelect, seleccionadoId, fr
       ) : (
         <ul className="picker__grid">
           {visibles.map((p) => {
-            const e = estadoStock({ ...p, stock_actual: cantidadDe(p) })
+            const e = renderDetalle ? 'ok' : estadoStock({ ...p, stock_actual: cantidadDe(p) })
             const sel = String(seleccionadoId) === String(p.id)
             const bloqueado = sinStockBloquea && cantidadDe(p) <= 0
             return (
@@ -73,8 +82,12 @@ export default function ProductoPicker({ productos, onSelect, seleccionadoId, fr
                   <span className="pcard__name">{p.nombre}</span>
                   <span className="pcard__meta">{p.codigo} · {p.categoria}</span>
                   <span className="pcard__stock">
-                    {e === 'sin' ? 'Sin stock' : <><b>{num(cantidadDe(p))}</b> {p.unidad_medida}</>}
-                    {e === 'bajo' && <em>Stock bajo</em>}
+                    {renderDetalle ? renderDetalle(p) : (
+                      <>
+                        {e === 'sin' ? 'Sin stock' : <><b>{num(cantidadDe(p))}</b> {p.unidad_medida}</>}
+                        {e === 'bajo' && <em>Stock bajo</em>}
+                      </>
+                    )}
                   </span>
                   {sel && <span className="pcard__check" aria-hidden="true"><Check size={18} strokeWidth={3} /></span>}
                 </button>

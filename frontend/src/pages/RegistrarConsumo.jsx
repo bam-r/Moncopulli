@@ -139,11 +139,16 @@ export default function RegistrarConsumo() {
             </div>
           ) : (
             <div className="card consumo__form">
-              <button type="button" className="btn btn--secondary btn--lg only-mobile" onClick={limpiar}><ArrowLeft size={22} /> Cambiar insumo</button>
-
               <div className="elegido">
-                <span className="elegido__name">{producto.nombre}</span>
-                <span className="elegido__meta">{producto.codigo} · {producto.categoria} · Total en predio: {num(producto.stock_actual)} {producto.unidad_medida}</span>
+                <div className="elegido__top">
+                  <div className="elegido__info">
+                    <span className="elegido__name">{producto.nombre}</span>
+                    <span className="elegido__meta">{producto.codigo} · {producto.categoria} · Total: {num(producto.stock_actual)} {producto.unidad_medida}</span>
+                  </div>
+                  <button type="button" className="elegido__cambiar only-mobile" onClick={limpiar}>
+                    <ArrowLeft size={18} /> Cambiar
+                  </button>
+                </div>
               </div>
 
               <h2 className="paso"><span>2</span> ¿De qué bodega?</h2>
