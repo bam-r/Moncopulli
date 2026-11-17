@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { Eye, EyeOff, Plus } from 'lucide-react'
 import { useAuth } from '../auth/AuthContext'
 import { useRecursos } from '../api/hooks'
@@ -168,6 +169,7 @@ function Privacidad() {
     <section className="card settings-card">
       <header><h2>Privacidad y datos personales</h2><p className="sub">Descarga una copia de tus datos o administra finalidades opcionales.</p></header>
       <div className="form__actions">
+        <Link className="btn btn--secondary" to="/mi-informacion">Ver mi información / Exportar PDF</Link>
         <button type="button" className="btn btn--secondary" onClick={descargar}>Descargar mis datos (JSON)</button>
       </div>
       <div className="form">

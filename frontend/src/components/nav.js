@@ -1,5 +1,5 @@
 import {
-  ChartNoAxesColumn, CircleHelp, ClipboardList, Droplets, History, LayoutGrid, Package, PackageMinus,
+  ChartNoAxesColumn, CircleHelp, ClipboardList, Droplets, FileText, History, LayoutGrid, Package, PackageMinus,
   Settings, ShoppingCart, Truck, Users, Warehouse,
 } from 'lucide-react'
 
@@ -44,6 +44,7 @@ export const SECCIONES = [
 export const PIE = [
   { to: '/ayuda', label: 'Ayuda', corto: 'Ayuda', icon: CircleHelp },
   { to: '/configuracion', label: 'Configuración', corto: 'Ajustes', icon: Settings },
+  { to: '/mi-informacion', label: 'Mi información', corto: 'Mi info', icon: FileText, trabajador: true },
 ]
 
 // Lo que va siempre a la vista en la barra inferior del celular (el resto queda en "Más").
@@ -64,11 +65,13 @@ export function menuPara(admin) {
 }
 
 export function piePara(admin) {
-  return PIE.map((n) => ({ ...n, label: etiqueta(n, admin), corto: corto(n, admin) }))
+  return PIE
+    .filter((n) => !n.trabajador || !admin)
+    .map((n) => ({ ...n, label: etiqueta(n, admin), corto: corto(n, admin) }))
 }
 
 export function titulos(admin) {
-  const todos = [...menuPara(admin).flatMap((s) => s.items), ...piePara(admin)]
+  const todos = [...menuPara(admin).flatMap((s) => s.items), ...PIE.map((n) => ({ ...n, label: etiqueta(n, admin) }))]
   return Object.fromEntries(todos.map((n) => [n.to, n.label]))
 }
 
