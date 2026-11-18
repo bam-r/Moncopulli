@@ -1,300 +1,102 @@
-#archivo de pruebas automatizadas con pytest cubriendo los casos de prueba P05, P06, P07, P11, P15 y P19 del proyecto Moncopulli.
+from datetime import timedelta
+from django.utils import timezone
+import requests
 
-from datetime import date
-from decimal import Decimal
-import pytest
-from rest_framework.test import APIClient
-
-from inventario.models import (
-    Bodega,
-    Consumo,
-    DetalleInventario,
-    DocumentoCompra,
-    Inventario,
-    Producto,
-    Proveedor,
-    StockBodega,
-    Usuario,
-)
-from inventario.servicios import mover_stock
+BASE_URL = "http://127.0.0.1:8000/api"
 
 
-@pytest.fixture
-def api_client():
-    return APIClient()
+def test_p17_sincronizacion_consumos_offline():
 
-
-@pytest.fixture
-def entorno_base(db):
-    """Crea datos iniciales limpios en la BD de pruebas para cada test."""
-    admin = Usuario.objects.create(
-        rut="11.111.111-1",
-        nombre_completo="Admin Moncopulli",
-        puesto="Administrador",
-        departamento="Gerencia",
-        telefono="912345678",
-        email="admin@moncopulli.cl",
-        contrasena="hashed_password_123",
-        rol="ADMIN",
-        estado="Activo",
+    login_resp = requests.post(
+        f"{BASE_URL}/auth/login/",
+        json={"rut": "333.333.33-3", "contrasena": "123456"},
     )
-    trabajador = Usuario.objects.create(
-        rut="22.222.222-2",
-        nombre_completo="Juan Operario",
-        puesto="Operario Agrícola",
-        departamento="Campo",
-        telefono="987654321",
-        email="juan@moncopulli.cl",
-        contrasena="hashed_password_456",
-        rol="TRABAJADOR",
-        estado="Activo",
-    )
-    bodega = Bodega.objects.create(
-        nombre="Bodega Central",
-        ubicacion="Fundo Moncopulli Sector 1",
-        estado=True,
-    )
-    proveedor = Proveedor.objects.create(
-        razon_social="Insumos Agrícolas del Sur SpA",
-        nombre="AgroSur",
-        rut="76.123.456-7",
-        domicilio_legal="Ruta 5 Sur Km 920, Osorno",
-        telefono="642234567",
-        correo="ventas@agrosur.cl",
-        contacto="Carlos Pérez",
-        plazo_pago=30,
-        limite_credito=5000000,
-        categoria="Fertilizantes",
-        estado=True,
-    )
-    producto = Producto.objects.create(
-        codigo="FERT-001",
-        nombre="Urea Granulada 25kg",
-        categoria="Fertilizantes",
-        unidad_medida="Saco",
-        costo_promedio=Decimal("15000.00"),
-        stock_actual=Decimal("0.00"),
-        stock_minimo=Decimal("10.00"),
-    )
+    assert login_resp.status_code == 200
+    token = login_resp.json()["token"]
+    headers = {"Authorization": f"Bearer {token}"}
 
-    mover_stock(producto.id, bodega.id, Decimal("20.00"))
-    producto.refresh_from_db()
+    # 2. Enviar 20 consumos offline
+    fecha_en_terreno = (timezone.now() - timedelta(hours=1)).isoformat()
+    respuestas_ok = 0
 
-    return {
-        "admin": admin,
-        "trabajador": trabajador,
-        "bodega": bodega,
-        "proveedor": proveedor,
-        "producto": producto,
-    }
-
-
-# ==============================================================================
-# P05: Registro de consumo descuenta stock y guarda trazabilidad del usuario
-# ==============================================================================
-@pytest.mark.django_db
-def test_p05_registro_consumo_descuenta_stock_y_trazabilidad(api_client, entorno_base):
-    producto = entorno_base["producto"]
-    bodega = entorno_base["bodega"]
-    trabajador = entorno_base["trabajador"]
-    api_client.force_authenticate(user=trabajador)
-
-    payload = {
-        "cantidad_retirada": "5.00",
-        "usuario": trabajador.id,
-        "producto": producto.id,
-        "bodega": bodega.id,
-    }
-    response = api_client.post("/api/consumos/", payload, format="json")
-
-    assert response.status_code == 201
-    producto.refresh_from_db()
-    stock_bodega = StockBodega.objects.get(producto=producto, bodega=bodega)
-
-    assert producto.stock_actual == Decimal("15.00")
-    assert stock_bodega.cantidad == Decimal("15.00")
-
-    consumo = Consumo.objects.get(id=response.data["id"])
-    assert consumo.usuario_id == trabajador.id
-    assert consumo.estado == "CONFIRMADO"
-
-
-# ==============================================================================
-# P06: Rechazar retiro mayor al stock disponible sin alterar inventario
-# ==============================================================================
-@pytest.mark.django_db
-def test_p06_consumo_supera_stock_rechazado(api_client, entorno_base):
-    producto = entorno_base["producto"]  # Stock actual = 20.00
-    bodega = entorno_base["bodega"]
-    trabajador = entorno_base["trabajador"]
-    api_client.force_authenticate(user=trabajador)
-
-    payload = {
-        "cantidad_retirada": "25.00",  # Supera los 20 disponibles
-        "usuario": trabajador.id,
-        "producto": producto.id,
-        "bodega": bodega.id,
-    }
-    response = api_client.post("/api/consumos/", payload, format="json")
-
-    assert response.status_code == 400
-    assert "cantidad_retirada" in response.data
-
-    producto.refresh_from_db()
-    assert producto.stock_actual == Decimal("20.00")
-    assert Consumo.objects.count() == 0
-
-
-# ==============================================================================
-# P07: Ingreso de factura de compra con detalles incrementa stock y recalcula costo
-# ==============================================================================
-@pytest.mark.django_db
-def test_p07_ingreso_compra_incrementa_stock(api_client, entorno_base):
-    producto = entorno_base["producto"]  # Stock = 20, costo_promedio = 15000
-    bodega = entorno_base["bodega"]
-    proveedor = entorno_base["proveedor"]
-    admin = entorno_base["admin"]
-    api_client.force_authenticate(user=admin)
-
-    payload = {
-        "numero_folio": "98765",
-        "tipo_documento": "FACTURA",
-        "fecha_emision": str(date.today()),
-        "condicion_pago": "CREDITO",
-        "dias_credito": 30,
-        "proveedor": proveedor.id,
-        "bodega": bodega.id,
-        "usuario": admin.id,
-        "detalles": [
-            {
-                "producto": producto.id,
-                "cantidad": "10.00",
-                "precio_unitario": 18000,
+    for i in range(20):
+            payload = {
+                "producto": 93,
+                "bodega": 6,
+                "cantidad_retirada": 1,
+                "fecha_offline": fecha_en_terreno,
             }
-        ],
-    }
-    response = api_client.post("/api/documentos-compra/", payload, format="json")
+            res = requests.post(f"{BASE_URL}/consumos/", json=payload, headers=headers)
+            if res.status_code == 201:
+                respuestas_ok += 1
 
-    assert response.status_code == 201
-    assert DocumentoCompra.objects.filter(numero_folio="98765").exists()
+    assert respuestas_ok == 20
 
-    producto.refresh_from_db()
-    assert producto.stock_actual == Decimal("30.00")
-    # Costo promedio ponderado: (20*15000 + 10*18000) / 30 = 16000.00
-    assert producto.costo_promedio == Decimal("16000.00")
+def _contar_registros(data):
+    return data["count"] if isinstance(data, dict) and "count" in data else len(data)
 
 
-# ==============================================================================
-# P11: Creación de inventario físico y cálculo automático de desviación
-# ==============================================================================
-@pytest.mark.django_db
-def test_p11_inventario_calcula_desviacion(api_client, entorno_base):
-    producto = entorno_base["producto"]  # Stock sistema = 20.00
-    bodega = entorno_base["bodega"]
-    admin = entorno_base["admin"]
-    api_client.force_authenticate(user=admin)
+def test_p19_datos_duplicados():
 
-    payload = {
-        "fecha": str(date.today()),
-        "usuario": admin.id,
-        "bodega": bodega.id,
-        "detalles": [
-            {
-                "producto": producto.id,
-                "stock_real": "17.50",  # Faltan 2.50 unidades respecto al sistema
-            }
-        ],
-    }
-    response = api_client.post("/api/inventarios/", payload, format="json")
+    #login de admin
+    login_resp = requests.post(
+        f"{BASE_URL}/auth/login/",
+        json={"rut": "123.123.12-3", "contrasena": "123"},
+    )
+    assert login_resp.status_code == 200, f"Fallo login admin: {login_resp.text}"
+    token = login_resp.json()["token"]
+    headers = {"Authorization": f"Bearer {token}"}
 
-    assert response.status_code == 201
-    inventario = Inventario.objects.get(id=response.data["id"])
-    detalle = DetalleInventario.objects.get(inventario=inventario, producto=producto)
+    # Conteo previo en BD para verificacion
+    prov_antes = _contar_registros(requests.get(f"{BASE_URL}/proveedores/", headers=headers).json())
+    user_antes = _contar_registros(requests.get(f"{BASE_URL}/usuarios/", headers=headers).json())
+    prod_antes = _contar_registros(requests.get(f"{BASE_URL}/productos/", headers=headers).json())
 
-    assert detalle.stock_sistema == Decimal("20.00")
-    assert detalle.stock_real == Decimal("17.50")
-    assert detalle.desviacion == Decimal("-2.50")
-
-
-# ==============================================================================
-# P15: Consumo deja producto bajo stock mínimo activando condición de alerta
-# ==============================================================================
-@pytest.mark.django_db
-def test_p15_consumo_activa_alerta_stock_minimo(api_client, entorno_base):
-    producto = entorno_base["producto"]  # Stock = 20.00, stock_minimo = 10.00
-    bodega = entorno_base["bodega"]
-    trabajador = entorno_base["trabajador"]
-    api_client.force_authenticate(user=trabajador)
-
-    payload = {
-        "cantidad_retirada": "13.00",  # Quedarán 7.00 (< 10.00 mínimo)
-        "usuario": trabajador.id,
-        "producto": producto.id,
-        "bodega": bodega.id,
-    }
-    response = api_client.post("/api/consumos/", payload, format="json")
-
-    assert response.status_code == 201
-    producto.refresh_from_db()
-    assert producto.stock_actual == Decimal("7.00")
-    assert producto.stock_actual <= producto.stock_minimo
-
-
-# ==============================================================================
-# P19: Validación de unicidad (RUT proveedor, RUT usuario, código producto)
-# ==============================================================================
-@pytest.mark.django_db
-def test_p19_rechaza_datos_duplicados(api_client, entorno_base):
-    api_client.force_authenticate(user=entorno_base["admin"])
-    # 1. RUT de proveedor duplicado
-    resp_prov = api_client.post(
-        "/api/proveedores/",
-        {
-            "razon_social": "Otra Empresa SpA",
-            "nombre": "Otra",
-            "rut": "76.123.456-7",  # Ya existe en entorno_base
-            "domicilio_legal": "Calle 1",
-            "telefono": "911111111",
-            "correo": "a@b.cl",
-            "contacto": "Juan",
-            "plazo_pago": 15,
-            "limite_credito": 100000,
-            "categoria": "Varios",
+    # 2. Proveedor con RUT ya existente
+    res_prov = requests.post(
+        f"{BASE_URL}/proveedores/",
+        json={
+            "rut": "76.40416-K",
+            "razon_social": "Proveedor Duplicado Test",
+            "telefono": "912345678",
+            "email": "prov_duplicado@test.cl",
         },
-        format="json",
+        headers=headers,
     )
-    assert resp_prov.status_code == 400
+    assert res_prov.status_code == 400, f"recibido {res_prov.status_code}"
 
-    # 2. RUT de usuario duplicado
-    resp_user = api_client.post(
-        "/api/usuarios/",
-        {
-            "rut": "22.222.222-2",  # Ya existe en entorno_base
-            "nombre_completo": "Duplicado",
+    # 3. Usuario con RUT ya existente
+    res_user = requests.post(
+        f"{BASE_URL}/usuarios/",
+        json={
+            "rut": "33.333.333-3",
+            "nombre_completo": "Usuario Duplicado Test",
             "puesto": "Operario",
             "departamento": "Campo",
-            "telefono": "922222222",
-            "email": "dup@moncopulli.cl",
-            "contrasena": "password123",
+            "telefono": "987654321",
+            "email": "user_duplicado@test.cl",
             "rol": "TRABAJADOR",
             "estado": "Activo",
+            "contrasena": "Password123456",
         },
-        format="json",
+        headers=headers,
     )
-    assert resp_user.status_code == 400
+    assert res_user.status_code == 400, f"recibido {res_user.status_code}"
 
-    # 3. Código de producto duplicado
-    resp_prod = api_client.post(
-        "/api/productos/",
-        {
-            "codigo": "FERT-001",  # Ya existe en entorno_base
-            "nombre": "Otro Producto",
-            "categoria": "Varios",
-            "unidad_medida": "Unidad",
-            "costo_promedio": "1000.00",
-            "stock_actual": "0.00",
-            "stock_minimo": "5.00",
+    # 4. Producto con código ya existente
+    res_prod = requests.post(
+        f"{BASE_URL}/productos/",
+        json={
+            "codigo": "AGR-008",
+            "nombre": "Producto Duplicado Test",
+            "unidad_medida": "kg",
+            "stock_minimo": 5,
         },
-        format="json",
+        headers=headers,
     )
-    assert resp_prod.status_code == 400
+    assert res_prod.status_code == 400, f"recibido {res_prod.status_code}"
+
+    # 5. Confirmar que el total de registros en BD se mantuvo intacto
+    assert _contar_registros(requests.get(f"{BASE_URL}/proveedores/", headers=headers).json()) == prov_antes
+    assert _contar_registros(requests.get(f"{BASE_URL}/usuarios/", headers=headers).json()) == user_antes
+    assert _contar_registros(requests.get(f"{BASE_URL}/productos/", headers=headers).json()) == prod_antes

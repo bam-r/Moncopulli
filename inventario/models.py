@@ -155,11 +155,6 @@ class Producto(models.Model):
 
 
 class StockBodega(models.Model):
-    """Cuánto hay de cada producto en cada bodega.
-
-    Producto.stock_actual sigue siendo el total: siempre es la suma de las
-    filas de StockBodega de ese producto (se recalcula en servicios.py).
-    """
 
     bodega = models.ForeignKey(Bodega, on_delete=models.PROTECT, related_name="stocks")
     producto = models.ForeignKey(Producto, on_delete=models.PROTECT, related_name="stocks")
